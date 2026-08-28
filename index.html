@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>艾莎魔镜</title>
+<link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+
+<!-- 雪花背景 -->
+<canvas id="snow"></canvas>
+
+<!-- 极光 -->
+<div class="aurora"></div>
+
+<!-- 魔镜主体 -->
+<main id="mirror" class="standby">
+  <div class="mirror-frame">
+    <div class="mirror-glow"></div>
+    <!-- 视频形象（AI 生成；加载失败时回退到下方 SVG） -->
+    <video id="vid-idle" src="assets/idle.mp4" muted loop autoplay playsinline></video>
+    <video id="vid-talking" src="assets/talking.mp4" muted loop playsinline></video>
+    <!-- 艾莎形象（程序绘制的冰雪公主，作为视频缺失时的兜底） -->
+    <svg id="elsa" viewBox="0 0 300 340" aria-label="艾莎">
+      <defs>
+        <radialGradient id="faceGrad" cx="50%" cy="42%" r="65%">
+          <stop offset="0%" stop-color="#fff4e8"/>
+          <stop offset="100%" stop-color="#f8dfc8"/>
+        </radialGradient>
+        <linearGradient id="hairGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#fffdf2"/>
+          <stop offset="100%" stop-color="#f0e2ae"/>
+        </linearGradient>
+        <linearGradient id="dressGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#c9ecff"/>
+          <stop offset="100%" stop-color="#6fb6e4"/>
+        </linearGradient>
+      </defs>
+
+      <!-- 披风（艾莎的冰纱披风） -->
+      <path d="M58 340 C68 245 100 214 150 214 C200 214 232 245 242 340 Z" fill="#a8d8f0" opacity="0.28"/>
+      <!-- 后发（白金色，往后梳的发髻轮廓） -->
+      <path d="M150 34 C96 34 74 84 78 142 C80 172 92 196 104 208 L196 208 C208 196 220 172 222 142 C226 84 204 34 150 34 Z" fill="url(#hairGrad)"/>
+      <!-- 脖子与露肩锁骨 -->
+      <rect x="140" y="205" width="20" height="34" rx="9" fill="#f8dfc8"/>
+      <path d="M104 262 C110 234 130 222 150 222 C170 222 190 234 196 262 C182 252 166 248 150 248 C134 248 118 252 104 262 Z" fill="#f8dfc8"/>
+      <!-- 冰蓝抹胸礼服 -->
+      <path d="M90 340 C94 282 116 256 150 256 C184 256 206 282 210 340 Z" fill="url(#dressGrad)"/>
+      <path d="M116 262 Q150 246 184 262" stroke="#e8f7ff" stroke-width="3" fill="none" opacity="0.85"/>
+      <!-- 裙面碎钻 -->
+      <g fill="#ffffff">
+        <circle cx="135" cy="298" r="2" opacity="0.9"/>
+        <circle cx="163" cy="288" r="1.6" opacity="0.75"/>
+        <circle cx="150" cy="318" r="2.2" opacity="0.85"/>
+        <circle cx="176" cy="314" r="1.5" opacity="0.7"/>
+        <circle cx="124" cy="324" r="1.5" opacity="0.7"/>
+        <circle cx="150" cy="272" r="1.4" opacity="0.6"/>
+      </g>
+      <!-- 脸（更清瘦白皙） -->
+      <ellipse cx="150" cy="150" rx="58" ry="68" fill="url(#faceGrad)"/>
+      <!-- 往后梳的发际线（无刘海，微微蓬起） -->
+      <path d="M150 56 C116 56 98 80 92 108 C112 84 128 74 150 72 C172 74 188 84 208 108 C202 80 184 56 150 56 Z" fill="url(#hairGrad)"/>
+      <path d="M150 56 C142 46 150 38 162 42 C156 46 154 50 154 56 Z" fill="url(#hairGrad)"/>
+      <!-- 标志性粗辫子（搭在左肩，观众视角右侧） -->
+      <g fill="url(#hairGrad)" stroke="#dcc98a" stroke-width="1.2">
+        <path d="M196 120 C206 132 210 146 208 160 L192 156 C192 142 192 130 196 120 Z" stroke="none"/>
+        <circle cx="203" cy="166" r="13"/>
+        <circle cx="210" cy="189" r="14.5"/>
+        <circle cx="214" cy="213" r="15.5"/>
+        <circle cx="213" cy="237" r="15"/>
+        <circle cx="209" cy="260" r="14"/>
+        <circle cx="205" cy="281" r="12.5"/>
+      </g>
+      <path d="M205 292 C198 306 202 318 208 326 C212 316 214 304 211 292 Z" fill="url(#hairGrad)"/>
+      <!-- 腮红 -->
+      <ellipse cx="114" cy="172" rx="10" ry="5.5" fill="#f7b8a8" opacity="0.5"/>
+      <ellipse cx="186" cy="172" rx="10" ry="5.5" fill="#f7b8a8" opacity="0.5"/>
+      <!-- 淡紫眼影 -->
+      <ellipse cx="122" cy="133" rx="13" ry="5" fill="#c9b4e4" opacity="0.5"/>
+      <ellipse cx="178" cy="133" rx="13" ry="5" fill="#c9b4e4" opacity="0.5"/>
+      <!-- 眼睛 -->
+      <g class="eye eye-left">
+        <ellipse cx="122" cy="148" rx="13" ry="15" fill="#fff"/>
+        <circle cx="124" cy="150" r="8" fill="#4a7fb5"/>
+        <circle cx="124" cy="150" r="4" fill="#1d3a57"/>
+        <circle cx="127" cy="146" r="2.4" fill="#fff"/>
+        <rect class="eyelid" x="107" y="128" width="30" height="0" rx="8" fill="url(#faceGrad)"/>
+      </g>
+      <g class="eye eye-right">
+        <ellipse cx="178" cy="148" rx="13" ry="15" fill="#fff"/>
+        <circle cx="176" cy="150" r="8" fill="#4a7fb5"/>
+        <circle cx="176" cy="150" r="4" fill="#1d3a57"/>
+        <circle cx="179" cy="146" r="2.4" fill="#fff"/>
+        <rect class="eyelid" x="163" y="128" width="30" height="0" rx="8" fill="url(#faceGrad)"/>
+      </g>
+      <!-- 眉毛 -->
+      <path d="M108 128 Q122 120 136 127" stroke="#c9a86a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <path d="M164 127 Q178 120 192 128" stroke="#c9a86a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <!-- 鼻子 -->
+      <path d="M148 162 Q145 172 150 175 Q155 172 152 162" stroke="#e0b898" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <!-- 嘴（说话时驱动） -->
+      <g id="mouth-group">
+        <path id="mouth" d="M132 194 Q150 206 168 194" stroke="#d4756b" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+        <ellipse id="mouth-open" cx="150" cy="197" rx="12" ry="1" fill="#b05a52" opacity="0"/>
+      </g>
+      <!-- 头顶雪花发饰 -->
+      <g fill="#dff2ff" opacity="0.95">
+        <path d="M150 44 l0 -16 M142 36 l16 0 M144 30 l12 12 M144 42 l12 -12" stroke="#dff2ff" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="150" cy="36" r="3.5"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- 状态提示 -->
+  <div id="status-text">轻拍雪花，叫醒艾莎 ❄️</div>
+
+  <!-- 唤醒雪花按钮 -->
+  <button id="wake-btn" aria-label="叫醒艾莎">
+    <svg viewBox="0 0 60 60">
+      <g stroke="#cfeaff" stroke-width="3" stroke-linecap="round" fill="none">
+        <path d="M30 6 V54 M9 18 L51 42 M9 42 L51 18"/>
+        <path d="M30 6 l-6 8 M30 6 l6 8 M30 54 l-6 -8 M30 54 l6 -8"/>
+        <path d="M9 18 l10 1 M9 18 l1 10 M51 42 l-10 -1 M51 42 l-1 -10"/>
+        <path d="M9 42 l1 -10 M9 42 l10 -1 M51 18 l-1 10 M51 18 l-10 1"/>
+      </g>
+    </svg>
+  </button>
+
+  <!-- 今日读书进度 -->
+  <div id="book-progress" aria-label="今日读书进度"></div>
+</main>
+
+<!-- 打卡庆祝动画层 -->
+<div id="celebrate"></div>
+
+<!-- 家长入口（左上角长按 3 秒） -->
+<div id="parent-corner"></div>
+
+<!-- 家长设置面板 -->
+<dialog id="parent-panel">
+  <h2>家长设置</h2>
+  <nav class="tabs">
+    <button data-tab="general" class="active">基本</button>
+    <button data-tab="schedule">作息提醒</button>
+    <button data-tab="persona">人设</button>
+    <button data-tab="log">记录</button>
+  </nav>
+
+  <section data-panel="general" class="active">
+    <label>OpenAI API Key
+      <input type="password" id="cfg-key" placeholder="sk-..." autocomplete="off">
+    </label>
+    <p class="hint">不填则进入演示模式（用系统语音念台词，不联网、不花钱）。Key 只保存在这台 iPad 的浏览器里。</p>
+    <label>音色
+      <select id="cfg-voice">
+        <option value="marin">Marin（温暖女声，推荐）</option>
+        <option value="alloy">Alloy</option>
+        <option value="shimmer">Shimmer</option>
+        <option value="coral">Coral</option>
+      </select>
+    </label>
+    <label>每天读书目标（本）
+      <input type="number" id="cfg-books" min="1" max="10" value="3">
+    </label>
+    <label>每天对话时长上限（分钟）
+      <input type="number" id="cfg-limit" min="5" max="240" value="60">
+    </label>
+    <p class="hint">到达上限后艾莎会说"要回冰雪城堡休息啦"，第二天恢复。</p>
+  </section>
+
+  <section data-panel="schedule">
+    <div id="schedule-list"></div>
+    <button id="add-reminder" class="secondary">＋ 添加提醒</button>
+    <p class="hint">到点时魔镜会自己亮起来，艾莎主动开口提醒。iPad 需保持插电、本页面常开。</p>
+  </section>
+
+  <section data-panel="persona">
+    <textarea id="cfg-persona" rows="14"></textarea>
+    <button id="persona-reset" class="secondary">恢复默认人设</button>
+  </section>
+
+  <section data-panel="log">
+    <div id="log-view"></div>
+  </section>
+
+  <footer>
+    <button id="cfg-save">保存</button>
+    <button id="cfg-close" class="secondary">关闭</button>
+  </footer>
+</dialog>
+
+<audio id="remote-audio" autoplay playsinline></audio>
+
+<script src="persona.js?v=3"></script>
+<script src="realtime.js?v=3"></script>
+<script src="app.js?v=3"></script>
+</body>
+</html>

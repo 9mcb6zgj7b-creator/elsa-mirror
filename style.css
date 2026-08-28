@@ -1,0 +1,245 @@
+/* 艾莎魔镜 —— 深色冰雪夜固定主题 */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 120%, #16324f 0%, #0b1d33 45%, #060f1d 100%);
+  font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+  color: #cfeaff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#snow { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+
+.aurora {
+  position: fixed; inset: -20% -10% auto -10%; height: 55%;
+  background:
+    radial-gradient(ellipse 60% 40% at 30% 30%, rgba(80, 200, 180, 0.14), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 70% 25%, rgba(120, 140, 255, 0.12), transparent 70%);
+  filter: blur(30px);
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+  z-index: 0;
+}
+@keyframes aurora-drift {
+  from { transform: translateX(-4%) scale(1); }
+  to   { transform: translateX(4%) scale(1.08); }
+}
+
+/* ---- 魔镜主体 ---- */
+#mirror {
+  position: relative; z-index: 2;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4vh;
+  transition: filter 1.2s ease, opacity 1.2s ease;
+}
+
+.mirror-frame {
+  position: relative;
+  width: min(58vw, 46vh);
+  aspect-ratio: 300 / 340;
+}
+
+.mirror-glow {
+  position: absolute; inset: -12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(140, 200, 255, 0.35) 0%, rgba(140, 200, 255, 0.08) 55%, transparent 72%);
+  transition: opacity 1s ease, transform 0.15s ease;
+  transform: scale(var(--glow-scale, 1));
+}
+
+#elsa { position: relative; width: 100%; height: 100%; filter: drop-shadow(0 0 24px rgba(120, 190, 255, 0.25)); }
+
+/* ---- 视频形象 ---- */
+.mirror-frame video {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  border-radius: 26px;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+/* 视频全屏铺满：iPad 竖放，9:16 视频 cover 裁切 */
+.mirror-frame.has-video {
+  position: fixed; inset: 0;
+  width: 100%; height: 100%;
+  aspect-ratio: auto;
+  z-index: 0;
+}
+.mirror-frame.has-video video {
+  border-radius: 0;
+  object-position: 50% 22%;   /* 横放裁切时优先保住脸部 */
+}
+.mirror-frame.has-video::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 24vh;
+  background: linear-gradient(to top, rgba(6, 15, 29, 0.72), transparent);
+  pointer-events: none;
+}
+.mirror-frame.has-video .mirror-glow { display: none; }
+.mirror-frame.has-video #vid-idle { opacity: 1; }
+.mirror-frame.has-video.speaking #vid-talking { opacity: 1; }
+.mirror-frame.has-video #elsa { display: none; }
+
+/* 全屏模式下的悬浮控件布局 */
+#mirror.video-full { justify-content: flex-end; padding-bottom: 4vh; gap: 2.5vh; }
+#mirror.video-full #status-text,
+#mirror.video-full #wake-btn { position: relative; z-index: 2; }
+#mirror.video-full #status-text { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+#mirror.video-full #book-progress {
+  bottom: auto; top: 3vh; right: 3vw; left: auto;
+  z-index: 2;
+}
+
+/* 待机：整体变暗变静 */
+#mirror.standby { filter: brightness(0.32) saturate(0.6); }
+#mirror.standby .mirror-glow { opacity: 0.25; }
+
+/* 唤醒中 */
+#mirror.waking { filter: brightness(0.8); }
+
+/* 对话中 */
+#mirror.awake { filter: brightness(1); }
+#mirror.awake .mirror-glow { opacity: 1; }
+
+/* 眨眼 */
+.eyelid { animation: blink 5.2s infinite; }
+.eye-right .eyelid { animation-delay: 0.05s; }
+@keyframes blink {
+  0%, 94%, 100% { height: 0; y: 128; }
+  96%, 98% { height: 34px; }
+}
+
+#status-text {
+  font-size: clamp(15px, 2.4vw, 22px);
+  letter-spacing: 0.12em;
+  opacity: 0.85;
+  text-align: center;
+  min-height: 1.6em;
+  text-shadow: 0 0 12px rgba(140, 200, 255, 0.5);
+  transition: opacity 0.6s ease;
+}
+#mirror.standby #status-text { opacity: 0.45; }
+
+/* ---- 唤醒雪花 ---- */
+#wake-btn {
+  width: clamp(64px, 10vw, 96px);
+  aspect-ratio: 1;
+  background: none; border: none; cursor: pointer;
+  animation: snow-breathe 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 14px rgba(160, 215, 255, 0.7));
+}
+#wake-btn:active { transform: scale(0.88); }
+#wake-btn svg { width: 100%; height: 100%; }
+@keyframes snow-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.85; }
+  50% { transform: scale(1.1) rotate(12deg); opacity: 1; }
+}
+#mirror.awake #wake-btn { animation-play-state: paused; opacity: 0.45; }
+
+/* ---- 读书进度雪花 ---- */
+#book-progress {
+  position: absolute; bottom: 4vh;
+  display: flex; gap: 14px;
+}
+#book-progress .flake {
+  font-size: clamp(22px, 3.4vw, 34px);
+  opacity: 0.22;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+#book-progress .flake.earned {
+  opacity: 1;
+  transform: scale(1.15);
+  text-shadow: 0 0 16px rgba(170, 220, 255, 0.9);
+}
+
+/* ---- 庆祝层 ---- */
+#celebrate { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#celebrate .burst {
+  position: absolute;
+  font-size: 30px;
+  animation: burst-fly 1.6s ease-out forwards;
+}
+@keyframes burst-fly {
+  from { transform: translate(0, 0) scale(0.6); opacity: 1; }
+  to   { transform: translate(var(--dx), var(--dy)) scale(1.4) rotate(240deg); opacity: 0; }
+}
+
+/* ---- 家长入口 ---- */
+#parent-corner {
+  position: fixed; top: 0; left: 0;
+  width: 90px; height: 90px;
+  z-index: 6;
+}
+#parent-corner::after {
+  content: '⚙️';
+  position: absolute; top: 16px; left: 16px;
+  font-size: 26px;
+  opacity: 0;
+  transition: opacity 3s linear;
+  pointer-events: none;
+}
+#parent-corner.holding::after { opacity: 0.7; }
+
+/* ---- 家长面板 ---- */
+#parent-panel {
+  border: 1px solid #2c4a6b;
+  border-radius: 16px;
+  background: #0e2138;
+  color: #d8ecff;
+  padding: 24px;
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+#parent-panel::backdrop { background: rgba(3, 8, 15, 0.75); }
+#parent-panel h2 { font-size: 19px; margin-bottom: 16px; font-weight: 600; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.tabs button {
+  flex: 1; padding: 9px 0;
+  background: #14304f; color: #9cc4e8;
+  border: none; border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+.tabs button.active { background: #2f6da8; color: #fff; }
+
+#parent-panel section { display: none; }
+#parent-panel section.active { display: block; }
+
+#parent-panel label { display: block; margin: 14px 0 4px; font-size: 14px; color: #a8cbe8; }
+#parent-panel input, #parent-panel select, #parent-panel textarea {
+  width: 100%; margin-top: 6px; padding: 10px 12px;
+  background: #0a1828; color: #e8f4ff;
+  border: 1px solid #2c4a6b; border-radius: 8px;
+  font-size: 15px; font-family: inherit;
+}
+#parent-panel textarea { line-height: 1.6; font-size: 13px; }
+.hint { font-size: 12px; color: #6f93b5; margin-top: 8px; line-height: 1.5; }
+
+#schedule-list .reminder-row {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+}
+#schedule-list input[type="time"] { width: 110px; flex: none; margin-top: 0; }
+#schedule-list input[type="text"] { flex: 1; margin-top: 0; }
+#schedule-list .del {
+  flex: none; width: 34px; height: 34px;
+  background: #3a1f2b; color: #e08a8a;
+  border: none; border-radius: 8px; cursor: pointer; font-size: 16px;
+}
+
+#log-view { font-size: 14px; line-height: 2; color: #b8d8f0; }
+#log-view .log-day { border-bottom: 1px solid #1c3a5c; padding: 6px 0; }
+
+#parent-panel footer { display: flex; gap: 10px; margin-top: 22px; }
+#parent-panel footer button, #parent-panel .secondary, #add-reminder {
+  padding: 10px 18px;
+  background: #2f6da8; color: #fff;
+  border: none; border-radius: 8px; font-size: 15px; cursor: pointer;
+}
+#parent-panel .secondary { background: #14304f; color: #9cc4e8; }
+#add-reminder { margin-top: 4px; font-size: 14px; }
+#cfg-save { flex: 1; }
