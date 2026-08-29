@@ -25,8 +25,13 @@ function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg));
 
 let cfg = loadCfg();
 
-// 人设升级：家长没改过 v1 默认人设的话，自动换成带点赞规则的新版
-if (cfg.persona === DEFAULT_PERSONA_V1) { cfg.persona = DEFAULT_PERSONA; saveCfg(); }
+// 人设升级：家长没改过历史默认人设的话，清空存储值，此后始终跟随最新默认版
+// （personaText() 在 persona 为空时回退到 DEFAULT_PERSONA）
+if (cfg.persona === DEFAULT_PERSONA_V1 || cfg.persona === DEFAULT_PERSONA_V2 || cfg.persona === DEFAULT_PERSONA) {
+  cfg.persona = '';
+  saveCfg();
+}
+function personaText() { return cfg.persona || DEFAULT_PERSONA; }
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 function todayLog() {
@@ -184,7 +189,7 @@ function minutesUsedToday() {
 }
 
 function buildInstructions() {
-  return `${cfg.persona}\n\n[系统信息] 今天的读书目标是 ${cfg.booksGoal} 本，目前已读 ${todayLog().books} 本。`;
+  return `${personaText()}\n\n[系统信息] 今天的读书目标是 ${cfg.booksGoal} 本，目前已读 ${todayLog().books} 本。`;
 }
 function progressState() {
   return { booksToday: todayLog().books, booksGoal: cfg.booksGoal };
@@ -203,10 +208,13 @@ const TOOLS = [{
 }, {
   type: 'function',
   name: 'mark_good_behavior',
-  description: '当 Kiwi 说她做了读书之外的好事（自己刷牙、收拾玩具、帮忙家务、对人友善等）时调用，给她记一个赞',
+  description: '给 Kiwi 记一个赞：Kiwi 自己说她做了好事（刷牙、收拾玩具、帮忙等）时调用，家里大人让你给 Kiwi 点赞时也调用',
   parameters: {
     type: 'object',
-    properties: { behavior: { type: 'string', description: '她做的好事，简短中文描述' } },
+    properties: {
+      behavior: { type: 'string', description: '她做的好事，简短中文描述' },
+      from: { type: 'string', description: '谁点的赞：爸爸/妈妈/爷爷/奶奶等家人称呼；Kiwi 自己说的就填"艾莎"' }
+    },
     required: ['behavior']
   }
 }];
@@ -223,10 +231,13 @@ function handleToolCall(name, args) {
   if (name === 'mark_good_behavior') {
     const log = todayLog();
     if (!log.praises) log.praises = [];
-    log.praises.push(String(args.behavior || '做了一件好事').slice(0, 50));
+    log.praises.push({
+      by: String(args.from || '艾莎').slice(0, 12),
+      what: String(args.behavior || '做了一件好事').slice(0, 50)
+    });
     saveCfg();
     celebrateSnow(['⭐', '✨', '💛']);
-    return { praises_today: log.praises.length, behavior: args.behavior };
+    return { praises_today: log.praises.length, behavior: args.behavior, from: args.from || '艾莎' };
   }
   return {};
 }
@@ -407,7 +418,7 @@ function openPanel() {
   $('#cfg-voice').value = cfg.voice;
   $('#cfg-books').value = cfg.booksGoal;
   $('#cfg-limit').value = cfg.dailyLimitMin;
-  $('#cfg-persona').value = cfg.persona;
+  $('#cfg-persona').value = personaText();
   renderScheduleEditor();
   renderLog();
   renderReport();
@@ -494,7 +505,9 @@ function buildReportText() {
   const books = days.reduce((s, d) => s + (d.log.books || 0), 0);
   const minutes = days.reduce((s, d) => s + (d.log.minutes || 0), 0);
   const goalDays = days.filter(d => (d.log.books || 0) >= cfg.booksGoal).length;
-  const praises = days.flatMap(d => (d.log.praises || []).map(p => `${d.label} ${p}`));
+  // 兼容旧格式（纯字符串）与新格式（{by, what}）
+  const praises = days.flatMap(d => (d.log.praises || []).map(p =>
+    typeof p === 'string' ? `${d.label} ${p}` : `${d.label} ${p.what}（${p.by} 点的赞）`));
   const range = `${days[0].label}–${days[6].label}`;
 
   let text = `❄️ Kiwi 的一周小报告（${range}）\n\n`;
@@ -532,7 +545,8 @@ $('#cfg-save').addEventListener('click', () => {
   cfg.voice = $('#cfg-voice').value;
   cfg.booksGoal = Math.max(1, +$('#cfg-books').value || 3);
   cfg.dailyLimitMin = Math.max(5, +$('#cfg-limit').value || 60);
-  cfg.persona = $('#cfg-persona').value;
+  // 与当前默认人设一致就存空值，这样以后升级默认人设能自动跟随
+  cfg.persona = $('#cfg-persona').value === DEFAULT_PERSONA ? '' : $('#cfg-persona').value;
   cfg.schedule = cfg.schedule.filter(r => r.time && r.label);
   saveCfg();
   renderBookProgress();
