@@ -95,6 +95,22 @@ html, body {
   z-index: 2;
 }
 
+/* 横屏：竖版视频不再硬铺满（会裁掉脸），改为居中"魔镜相框"，两侧露出雪夜背景 */
+@media (orientation: landscape) {
+  .mirror-frame.has-video {
+    position: relative; inset: auto;
+    height: 72vh; width: auto;
+    aspect-ratio: 9 / 16;
+    border-radius: 24px;
+    border: 3px solid rgba(190, 230, 255, 0.35);
+    box-shadow: 0 0 44px rgba(140, 200, 255, 0.28);
+  }
+  .mirror-frame.has-video video { border-radius: 21px; object-position: center; }
+  .mirror-frame.has-video::after { display: none; }
+  #mirror.video-full { justify-content: center; padding-bottom: 0; gap: 2vh; }
+  #mirror.video-full #book-progress { top: 3vh; right: 3vw; }
+}
+
 /* 待机：整体变暗变静 */
 #mirror.standby { filter: brightness(0.32) saturate(0.6); }
 #mirror.standby .mirror-glow { opacity: 0.25; }
