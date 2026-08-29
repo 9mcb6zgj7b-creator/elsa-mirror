@@ -168,6 +168,8 @@ function teardown() {
   if (session) { session.close(); session = null; }
   eventSpeaking = false;
   audioLastLoudMs = 0;
+  // 对话过一次后麦克风权限大概率已授予，给语音唤醒一次重试机会
+  if (wakeWordCtl) wakeWordCtl.reset();
 }
 
 // 记录最近一次连接错误，供家长面板"记录"页排查
@@ -350,16 +352,21 @@ requestAnimationFrame(animate);
 // ---------- 语音唤醒（"hello 艾莎"） ----------
 (function wakeWord() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;   // 不支持则只保留拍雪花
-  let rec = null, active = false, errCount = 0;
+  const diagInfo = { sr: !!SR, standalone: !!navigator.standalone, errCount: 0, lastErr: '', listening: false };
+  if (!SR) { wakeWordCtl = { start() {}, stop() {}, reset() {}, diag: () => diagInfo }; return; }
+  let rec = null, active = false;
   const HOT = /艾莎|爱莎|哎莎|爱沙|艾沙|elsa|艾萨/i;
 
   function start() {
-    if (active || state !== 'standby' || errCount > 5) return;
+    if (active || state !== 'standby' || diagInfo.errCount > 5) return;
     rec = new SR();
     rec.lang = 'zh-CN';
     rec.continuous = true;
     rec.interimResults = true;
+    rec.onstart = () => {
+      diagInfo.listening = true;
+      if (state === 'standby') statusText.textContent = '👂 喊"hello 艾莎"，或轻拍雪花 ❄️';
+    };
     rec.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (HOT.test(e.results[i][0].transcript)) {
@@ -370,18 +377,26 @@ requestAnimationFrame(animate);
       }
     };
     rec.onerror = (e) => {
-      errCount++;
-      if (e.error === 'not-allowed') errCount = 99;   // 无麦克风权限，不再重试
+      diagInfo.errCount++;
+      diagInfo.lastErr = e.error || 'unknown';
+      // 无权限时先放弃；对话过一次（授权后）teardown 会 reset 再试
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') diagInfo.errCount = 99;
     };
     // iOS 会隔一段时间自动停止识别，待机中就重新拉起
-    rec.onend = () => { active = false; if (state === 'standby') setTimeout(start, 800); };
+    rec.onend = () => {
+      active = false;
+      diagInfo.listening = false;
+      if (state === 'standby') setTimeout(start, 800);
+    };
     try { rec.start(); active = true; } catch (_) { /* 已在运行等情况，忽略 */ }
   }
   function stop() {
     active = false;
+    diagInfo.listening = false;
     try { rec && rec.abort(); } catch (_) {}
   }
-  wakeWordCtl = { start, stop };
+  function reset() { diagInfo.errCount = 0; }
+  wakeWordCtl = { start, stop, reset, diag: () => diagInfo };
   setTimeout(start, 1500);
 })();
 
@@ -462,7 +477,9 @@ function renderLog() {
   const errHtml = cfg.lastError
     ? `<div class="log-day">⚠️ 最近一次连接错误（${cfg.lastError.time}）：<br>${cfg.lastError.msg}</div>`
     : '';
-  $('#log-view').innerHTML = errHtml + (days.length
+  const d = wakeWordCtl ? wakeWordCtl.diag() : {};
+  const wakeHtml = `<div class="log-day">🎙 语音唤醒诊断：识别接口${d.sr ? '✅支持' : '❌不支持'} · 主屏幕模式${d.standalone ? '是' : '否'} · 正在监听${d.listening ? '✅' : '❌'} · 错误${d.errCount || 0}次${d.lastErr ? '（最近：' + d.lastErr + '）' : ''}</div>`;
+  $('#log-view').innerHTML = wakeHtml + errHtml + (days.length
     ? days.map(d => {
         const l = cfg.log[d];
         return `<div class="log-day">${d} — 读书 ${l.books}/${cfg.booksGoal} 本 · 对话 ${l.minutes} 分钟</div>`;
