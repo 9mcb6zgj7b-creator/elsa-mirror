@@ -25,6 +25,9 @@ function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg));
 
 let cfg = loadCfg();
 
+// 人设升级：家长没改过 v1 默认人设的话，自动换成带点赞规则的新版
+if (cfg.persona === DEFAULT_PERSONA_V1) { cfg.persona = DEFAULT_PERSONA; saveCfg(); }
+
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 function todayLog() {
   if (!cfg.log[todayKey()]) cfg.log[todayKey()] = { books: 0, minutes: 0 };
@@ -65,6 +68,10 @@ let state = 'standby';
 let session = null;
 let idleTimer = null;
 let sessionStartMs = 0;
+let wakeWordCtl = null;   // 语音唤醒控制器（wakeWord 初始化后赋值）
+
+const SR_OK = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+const WAKE_HINT = SR_OK ? '喊"hello 艾莎"，或轻拍雪花 ❄️' : '轻拍雪花，叫醒艾莎 ❄️';
 
 function setState(s, text) {
   state = s;
@@ -77,6 +84,11 @@ function setState(s, text) {
     else vidIdle.play().catch(() => {});
   }
   if (s === 'standby') setSpeakingVisual(false);
+  // 待机时开启语音唤醒监听，离开待机立即停止（避免和对话麦克风冲突）
+  if (wakeWordCtl) {
+    if (s === 'standby') setTimeout(() => wakeWordCtl.start(), 1000);
+    else wakeWordCtl.stop();
+  }
 }
 
 function bumpIdle() {
@@ -93,7 +105,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
   }
   if (minutesUsedToday() >= cfg.dailyLimitMin) {
     setState('waking', '艾莎在冰雪城堡休息，明天再来玩哦 🌙');
-    setTimeout(() => setState('standby', '轻拍雪花，叫醒艾莎 ❄️'), 4000);
+    setTimeout(() => setState('standby', WAKE_HINT), 4000);
     return;
   }
 
@@ -121,7 +133,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
   } catch (e) {
     console.error(e);
     recordError(e);
-    setState('standby', cfg.apiKey ? '连不上魔法世界，请检查网络或 API Key' : '轻拍雪花，叫醒艾莎 ❄️');
+    setState('standby', cfg.apiKey ? '连不上魔法世界，请检查网络或 API Key' : WAKE_HINT);
     teardown();
     return;
   }
@@ -139,10 +151,10 @@ function sleep(sayGoodbye) {
   recordMinutes();
   if (sayGoodbye && session) {
     session.speak(goodbyeInstruction());
-    setTimeout(() => { teardown(); setState('standby', '轻拍雪花，叫醒艾莎 ❄️'); }, 6000);
+    setTimeout(() => { teardown(); setState('standby', WAKE_HINT); }, 6000);
   } else {
     teardown();
-    setState('standby', '轻拍雪花，叫醒艾莎 ❄️');
+    setState('standby', WAKE_HINT);
   }
 }
 
@@ -178,7 +190,7 @@ function progressState() {
   return { booksToday: todayLog().books, booksGoal: cfg.booksGoal };
 }
 
-// ---------- 工具（读书打卡） ----------
+// ---------- 工具（读书打卡 + 好行为点赞） ----------
 const TOOLS = [{
   type: 'function',
   name: 'mark_book_read',
@@ -188,16 +200,35 @@ const TOOLS = [{
     properties: { title: { type: 'string', description: '书名（如果 Kiwi 说了）' } },
     required: []
   }
+}, {
+  type: 'function',
+  name: 'mark_good_behavior',
+  description: '当 Kiwi 说她做了读书之外的好事（自己刷牙、收拾玩具、帮忙家务、对人友善等）时调用，给她记一个赞',
+  parameters: {
+    type: 'object',
+    properties: { behavior: { type: 'string', description: '她做的好事，简短中文描述' } },
+    required: ['behavior']
+  }
 }];
 
 function handleToolCall(name, args) {
-  if (name !== 'mark_book_read') return {};
-  const log = todayLog();
-  log.books += 1;
-  saveCfg();
-  renderBookProgress();
-  celebrateSnow();
-  return { books_today: log.books, goal: cfg.booksGoal, title: args.title || null };
+  if (name === 'mark_book_read') {
+    const log = todayLog();
+    log.books += 1;
+    saveCfg();
+    renderBookProgress();
+    celebrateSnow(['❄️', '✨', '💙']);
+    return { books_today: log.books, goal: cfg.booksGoal, title: args.title || null };
+  }
+  if (name === 'mark_good_behavior') {
+    const log = todayLog();
+    if (!log.praises) log.praises = [];
+    log.praises.push(String(args.behavior || '做了一件好事').slice(0, 50));
+    saveCfg();
+    celebrateSnow(['⭐', '✨', '💛']);
+    return { praises_today: log.praises.length, behavior: args.behavior };
+  }
+  return {};
 }
 
 // ---------- 读书进度与庆祝 ----------
@@ -213,12 +244,12 @@ function renderBookProgress() {
   }
 }
 
-function celebrateSnow() {
+function celebrateSnow(chars = ['❄️', '✨', '💙']) {
   const layer = $('#celebrate');
   for (let i = 0; i < 24; i++) {
     const b = document.createElement('span');
     b.className = 'burst';
-    b.textContent = ['❄️', '✨', '💙'][i % 3];
+    b.textContent = chars[i % chars.length];
     b.style.left = '50%';
     b.style.top = '55%';
     b.style.setProperty('--dx', `${(Math.random() - 0.5) * 90}vw`);
@@ -305,6 +336,44 @@ requestAnimationFrame(animate);
   })();
 })();
 
+// ---------- 语音唤醒（"hello 艾莎"） ----------
+(function wakeWord() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;   // 不支持则只保留拍雪花
+  let rec = null, active = false, errCount = 0;
+  const HOT = /艾莎|爱莎|哎莎|爱沙|艾沙|elsa|艾萨/i;
+
+  function start() {
+    if (active || state !== 'standby' || errCount > 5) return;
+    rec = new SR();
+    rec.lang = 'zh-CN';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (HOT.test(e.results[i][0].transcript)) {
+          stop();
+          wake({ type: 'tap' });
+          return;
+        }
+      }
+    };
+    rec.onerror = (e) => {
+      errCount++;
+      if (e.error === 'not-allowed') errCount = 99;   // 无麦克风权限，不再重试
+    };
+    // iOS 会隔一段时间自动停止识别，待机中就重新拉起
+    rec.onend = () => { active = false; if (state === 'standby') setTimeout(start, 800); };
+    try { rec.start(); active = true; } catch (_) { /* 已在运行等情况，忽略 */ }
+  }
+  function stop() {
+    active = false;
+    try { rec && rec.abort(); } catch (_) {}
+  }
+  wakeWordCtl = { start, stop };
+  setTimeout(start, 1500);
+})();
+
 // ---------- 交互 ----------
 $('#wake-btn').addEventListener('click', () => {
   if (state === 'standby') wake({ type: 'tap' });
@@ -341,6 +410,7 @@ function openPanel() {
   $('#cfg-persona').value = cfg.persona;
   renderScheduleEditor();
   renderLog();
+  renderReport();
   panel.showModal();
 }
 
@@ -408,6 +478,53 @@ $('#key-test').addEventListener('click', async () => {
   }
 });
 
+// ---------- 每周报告 ----------
+function weekData() {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}`, log: cfg.log[key] || { books: 0, minutes: 0 } });
+  }
+  return days;
+}
+
+function buildReportText() {
+  const days = weekData();
+  const books = days.reduce((s, d) => s + (d.log.books || 0), 0);
+  const minutes = days.reduce((s, d) => s + (d.log.minutes || 0), 0);
+  const goalDays = days.filter(d => (d.log.books || 0) >= cfg.booksGoal).length;
+  const praises = days.flatMap(d => (d.log.praises || []).map(p => `${d.label} ${p}`));
+  const range = `${days[0].label}–${days[6].label}`;
+
+  let text = `❄️ Kiwi 的一周小报告（${range}）\n\n`;
+  text += `📖 读书 ${books} 本，${goalDays} 天完成了每日 ${cfg.booksGoal} 本的目标\n`;
+  text += `💬 和艾莎聊了 ${minutes} 分钟\n`;
+  text += `⭐ 收到 ${praises.length} 个赞${praises.length ? '：' : ''}\n`;
+  praises.forEach(p => { text += `   ⭐ ${p}\n`; });
+  text += `\n艾莎说：${books >= cfg.booksGoal * 5
+    ? 'Kiwi 这周像小雪花一样闪闪发光，冰雪城堡都为她亮灯啦！✨'
+    : praises.length || books
+      ? 'Kiwi 每天都在一点点进步，艾莎为她骄傲！💙'
+      : '新的一周，艾莎在魔镜里等 Kiwi 来集雪花哦～'}`;
+  return text;
+}
+
+function renderReport() {
+  $('#report-view').innerHTML = buildReportText()
+    .split('\n')
+    .map(line => `<div class="log-day" style="border:none;padding:2px 0">${line || '&nbsp;'}</div>`)
+    .join('');
+}
+
+$('#report-share').addEventListener('click', async () => {
+  const text = buildReportText();
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); $('#report-share').textContent = '已复制，去粘贴给家人吧 ✅'; }
+  } catch (_) { /* 用户取消分享 */ }
+});
+
 $('#persona-reset').addEventListener('click', () => { $('#cfg-persona').value = DEFAULT_PERSONA; });
 
 $('#cfg-save').addEventListener('click', () => {
@@ -426,7 +543,7 @@ $('#cfg-close').addEventListener('click', () => panel.close());
 // ---------- 启动 ----------
 renderBookProgress();
 // 演示模式提示
-if (!cfg.apiKey) statusText.textContent = '轻拍雪花，叫醒艾莎 ❄️（演示模式）';
+statusText.textContent = WAKE_HINT + (cfg.apiKey ? '' : '（演示模式）');
 // iOS 上先触发一次语音列表加载
 if ('speechSynthesis' in window) speechSynthesis.getVoices();
 })();

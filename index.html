@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>艾莎魔镜</title>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -147,6 +147,7 @@
     <button data-tab="schedule">作息提醒</button>
     <button data-tab="persona">人设</button>
     <button data-tab="log">记录</button>
+    <button data-tab="report">周报</button>
   </nav>
 
   <section data-panel="general" class="active">
@@ -188,6 +189,11 @@
     <div id="log-view"></div>
   </section>
 
+  <section data-panel="report">
+    <div id="report-view"></div>
+    <button id="report-share" class="secondary">分享给家人 📤</button>
+  </section>
+
   <footer>
     <button id="cfg-save">保存</button>
     <button id="cfg-close" class="secondary">关闭</button>
@@ -196,8 +202,8 @@
 
 <audio id="remote-audio" autoplay playsinline></audio>
 
-<script src="persona.js?v=6"></script>
-<script src="realtime.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="persona.js?v=7"></script>
+<script src="realtime.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
