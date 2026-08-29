@@ -152,12 +152,14 @@ class ElsaRealtime {
       this.analyser.fftSize = 256;
       src.connect(this.analyser);
       this._audioCtx = ctx;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     } catch (_) { /* 分析器只驱动嘴型动画，失败不影响对话 */ }
   }
 
   // 0~1 的当前输出音量，用于驱动嘴型/光晕
   getLevel() {
     if (!this.analyser) return 0;
+    if (this._audioCtx && this._audioCtx.state === 'suspended') this._audioCtx.resume().catch(() => {});
     const data = new Uint8Array(this.analyser.frequencyBinCount);
     this.analyser.getByteFrequencyData(data);
     let sum = 0;

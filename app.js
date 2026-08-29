@@ -106,10 +106,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     tools: TOOLS,
     audioEl: $('#remote-audio'),
     onToolCall: handleToolCall,
-    onSpeakingChange: (speaking) => {
-      statusText.textContent = speaking ? '艾莎在说话…' : '艾莎在听 👂';
-      setSpeakingVisual(speaking);
-    },
+    onSpeakingChange: (speaking) => { eventSpeaking = speaking; },
     onActivity: bumpIdle,
     onError: (err) => {
       console.error('realtime error', err);
@@ -152,6 +149,8 @@ function sleep(sayGoodbye) {
 function teardown() {
   clearTimeout(idleTimer);
   if (session) { session.close(); session = null; }
+  eventSpeaking = false;
+  audioLastLoudMs = 0;
 }
 
 // 记录最近一次连接错误，供家长面板"记录"页排查
@@ -246,9 +245,23 @@ setInterval(() => {
   if (state === 'awake' && minutesUsedToday() >= cfg.dailyLimitMin) sleep(true);
 }, 20 * 1000);
 
-// ---------- 嘴型/光晕动画 ----------
+// ---------- 说话状态与嘴型/光晕动画 ----------
+// 说话视频的切换以"实际播放音量"为准（事件信号只作辅助）：
+// API 的 response.done 会在音频播完前提前到达，纯事件驱动会导致说话时画面提前切回聆听
+let eventSpeaking = false;
+let audioLastLoudMs = 0;
+let speakingShown = false;
+
 function animate() {
+  const now = performance.now();
   const level = session ? session.getLevel() : 0;
+  if (level > 0.05) audioLastLoudMs = now;
+  const speaking = state === 'awake' && ((now - audioLastLoudMs) < 700 || eventSpeaking);
+  if (speaking !== speakingShown) {
+    speakingShown = speaking;
+    setSpeakingVisual(speaking);
+    if (state === 'awake') statusText.textContent = speaking ? '艾莎在说话…' : '艾莎在听 👂';
+  }
   const open = Math.min(10, level * 14);
   mouthOpen.setAttribute('ry', String(open));
   mouthOpen.setAttribute('opacity', open > 1.5 ? '1' : '0');
