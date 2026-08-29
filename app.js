@@ -113,6 +113,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     onActivity: bumpIdle,
     onError: (err) => {
       console.error('realtime error', err);
+      recordError(err);
       setState('standby', '魔法断了一下，再拍一次雪花吧 ❄️');
       teardown();
     }
@@ -122,6 +123,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     await session.connect();
   } catch (e) {
     console.error(e);
+    recordError(e);
     setState('standby', cfg.apiKey ? '连不上魔法世界，请检查网络或 API Key' : '轻拍雪花，叫醒艾莎 ❄️');
     teardown();
     return;
@@ -150,6 +152,13 @@ function sleep(sayGoodbye) {
 function teardown() {
   clearTimeout(idleTimer);
   if (session) { session.close(); session = null; }
+}
+
+// 记录最近一次连接错误，供家长面板"记录"页排查
+function recordError(err) {
+  const msg = typeof err === 'string' ? err : (err && err.message) || JSON.stringify(err);
+  cfg.lastError = { time: new Date().toLocaleString('zh-CN'), msg: String(msg).slice(0, 300) };
+  saveCfg();
 }
 
 function recordMinutes() {
@@ -356,13 +365,35 @@ $('#add-reminder').addEventListener('click', () => {
 
 function renderLog() {
   const days = Object.keys(cfg.log).sort().reverse().slice(0, 14);
-  $('#log-view').innerHTML = days.length
+  const errHtml = cfg.lastError
+    ? `<div class="log-day">⚠️ 最近一次连接错误（${cfg.lastError.time}）：<br>${cfg.lastError.msg}</div>`
+    : '';
+  $('#log-view').innerHTML = errHtml + (days.length
     ? days.map(d => {
         const l = cfg.log[d];
         return `<div class="log-day">${d} — 读书 ${l.books}/${cfg.booksGoal} 本 · 对话 ${l.minutes} 分钟</div>`;
       }).join('')
-    : '<p class="hint">还没有记录，等 Kiwi 玩起来就有了。</p>';
+    : '<p class="hint">还没有对话记录，等 Kiwi 玩起来就有了。</p>');
 }
+
+// 测试 API Key：验证 Key 有效性和网络连通，不发起真实对话
+$('#key-test').addEventListener('click', async () => {
+  const key = $('#cfg-key').value.trim();
+  const out = $('#key-test-result');
+  if (!key) { out.textContent = '请先在上面填入 Key'; return; }
+  out.textContent = '测试中…';
+  try {
+    const r = await fetch('https://api.openai.com/v1/models?limit=1', {
+      headers: { Authorization: `Bearer ${key}` }
+    });
+    if (r.ok) out.textContent = '✅ Key 有效、网络通畅，保存后拍雪花即可对话';
+    else if (r.status === 401) out.textContent = '❌ Key 无效：请检查是否复制完整、或已被删除';
+    else if (r.status === 429) out.textContent = '❌ 账户额度不足：请到 platform.openai.com 充值';
+    else out.textContent = `❌ 测试失败（HTTP ${r.status}），把这个数字告诉 Claude`;
+  } catch (e) {
+    out.textContent = '❌ 网络不通：' + e.message;
+  }
+});
 
 $('#persona-reset').addEventListener('click', () => { $('#cfg-persona').value = DEFAULT_PERSONA; });
 

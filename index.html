@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>艾莎魔镜</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -154,6 +154,8 @@
       <input type="password" id="cfg-key" placeholder="sk-..." autocomplete="off">
     </label>
     <p class="hint">不填则进入演示模式（用系统语音念台词，不联网、不花钱）。Key 只保存在这台 iPad 的浏览器里。</p>
+    <button id="key-test" class="secondary">测试 API Key</button>
+    <p class="hint" id="key-test-result"></p>
     <label>音色
       <select id="cfg-voice">
         <option value="marin">Marin（温暖女声，推荐）</option>
@@ -194,8 +196,8 @@
 
 <audio id="remote-audio" autoplay playsinline></audio>
 
-<script src="persona.js?v=4"></script>
-<script src="realtime.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="persona.js?v=5"></script>
+<script src="realtime.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
