@@ -1,5 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
+const APP_VERSION = 'v10';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -572,6 +573,7 @@ $('#cfg-save').addEventListener('click', () => {
 $('#cfg-close').addEventListener('click', () => panel.close());
 
 // ---------- 启动 ----------
+document.querySelector('#app-version').textContent = APP_VERSION;
 renderBookProgress();
 // 演示模式提示
 statusText.textContent = WAKE_HINT + (cfg.apiKey ? '' : '（演示模式）');
