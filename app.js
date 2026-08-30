@@ -217,7 +217,7 @@ const TOOLS = [{
 }, {
   type: 'function',
   name: 'print_for_kiwi',
-  description: '为 Kiwi 打印内容：涂色画（coloring，需选 theme），或你创作的小故事（story）/艾莎的信（letter，内容放 text）',
+  description: '为 Kiwi 打印内容：涂色画（coloring，她想画什么写进 subject，现场生成）、或你创作的小故事（story）/艾莎的信（letter，内容放 text）',
   parameters: {
     type: 'object',
     properties: {
