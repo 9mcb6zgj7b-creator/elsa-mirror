@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v11';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v12';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -251,6 +251,8 @@ async function handleToolCall(name, args) {
       return { ok: true, note: '照片已放进对话，请根据看到的内容回应 Kiwi' };
     } catch (e) {
       return { ok: false, error: '魔镜的眼睛打不开（相机权限或设备问题）：' + (e.message || e.name) };
+    } finally {
+      stopCamera();   // 每拍完一张立即关闭摄像头（绿色指示灯熄灭），绝不常开
     }
   }
   if (name === 'print_for_kiwi') {
