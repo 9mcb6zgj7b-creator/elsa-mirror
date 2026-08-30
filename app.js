@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v10';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v11';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -169,6 +169,7 @@ function teardown() {
   if (session) { session.close(); session = null; }
   eventSpeaking = false;
   audioLastLoudMs = 0;
+  stopCamera();
   // 对话过一次后麦克风权限大概率已授予，给语音唤醒一次重试机会
   if (wakeWordCtl) wakeWordCtl.reset();
 }
@@ -210,6 +211,25 @@ const TOOLS = [{
   }
 }, {
   type: 'function',
+  name: 'look_with_eyes',
+  description: '用魔镜的眼睛（摄像头）看一眼 Kiwi 展示的东西：书页、画、玩具等。调用后照片会出现在对话里',
+  parameters: { type: 'object', properties: {}, required: [] }
+}, {
+  type: 'function',
+  name: 'print_for_kiwi',
+  description: '为 Kiwi 打印内容：涂色画（coloring，需选 theme），或你创作的小故事（story）/艾莎的信（letter，内容放 text）',
+  parameters: {
+    type: 'object',
+    properties: {
+      kind: { type: 'string', enum: ['coloring', 'story', 'letter'] },
+      theme: { type: 'string', enum: ['snowflake', 'castle', 'snowman'], description: 'coloring 时必选' },
+      title: { type: 'string', description: '标题' },
+      text: { type: 'string', description: 'story/letter 的完整内容' }
+    },
+    required: ['kind']
+  }
+}, {
+  type: 'function',
   name: 'mark_good_behavior',
   description: '给 Kiwi 记一个赞：Kiwi 自己说她做了好事（刷牙、收拾玩具、帮忙等）时调用，家里大人让你给 Kiwi 点赞时也调用',
   parameters: {
@@ -222,7 +242,25 @@ const TOOLS = [{
   }
 }];
 
-function handleToolCall(name, args) {
+async function handleToolCall(name, args) {
+  if (name === 'look_with_eyes') {
+    try {
+      statusText.textContent = '艾莎在看… 👀';
+      const dataUrl = await captureCameraFrame();
+      if (session && session.sendImage) session.sendImage(dataUrl);
+      return { ok: true, note: '照片已放进对话，请根据看到的内容回应 Kiwi' };
+    } catch (e) {
+      return { ok: false, error: '魔镜的眼睛打不开（相机权限或设备问题）：' + (e.message || e.name) };
+    }
+  }
+  if (name === 'print_for_kiwi') {
+    try {
+      printForKiwi(args);
+      return { ok: true, note: '打印窗口已弹出，等 Kiwi 按下打印键' };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  }
   if (name === 'mark_book_read') {
     const log = todayLog();
     log.books += 1;
@@ -243,6 +281,89 @@ function handleToolCall(name, args) {
     return { praises_today: log.praises.length, behavior: args.behavior, from: args.from || '艾莎' };
   }
   return {};
+}
+
+// ---------- 魔镜的眼睛（摄像头拍照） ----------
+let camStream = null;
+const camVideo = $('#cam');
+
+async function captureCameraFrame() {
+  if (!camStream) {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 } }
+    });
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+    await new Promise(r => setTimeout(r, 700));   // 等曝光稳定
+  }
+  const w = camVideo.videoWidth, h = camVideo.videoHeight;
+  if (!w || !h) throw new Error('相机画面为空');
+  const scale = Math.min(1, 1024 / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  canvas.getContext('2d').drawImage(camVideo, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.7);
+}
+
+function stopCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    camVideo.srcObject = null;
+  }
+}
+
+// ---------- 打印（AirPrint） ----------
+const COLORING_SVGS = {
+  snowflake: `<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round">
+    <g transform="translate(200,200)">
+      <g id="arm"><path d="M0 0 V-160 M0 -50 L-28 -78 M0 -50 L28 -78 M0 -100 L-24 -124 M0 -100 L24 -124 M0 -140 L-14 -154 M0 -140 L14 -154"/></g>
+      <use href="#arm" transform="rotate(60)"/><use href="#arm" transform="rotate(120)"/>
+      <use href="#arm" transform="rotate(180)"/><use href="#arm" transform="rotate(240)"/><use href="#arm" transform="rotate(300)"/>
+      <circle r="22"/><circle r="10"/>
+    </g></svg>`,
+  castle: `<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#000" stroke-width="4" stroke-linejoin="round">
+    <rect x="60" y="200" width="80" height="160"/><rect x="260" y="200" width="80" height="160"/>
+    <rect x="140" y="240" width="120" height="120"/>
+    <path d="M60 200 L100 130 L140 200 Z M260 200 L300 130 L340 200 Z"/>
+    <rect x="170" y="140" width="60" height="100"/><path d="M170 140 L200 80 L230 140 Z"/>
+    <path d="M200 80 L200 50 L230 60 L200 68"/>
+    <rect x="185" y="300" width="30" height="60" rx="15"/>
+    <circle cx="100" cy="230" r="10"/><circle cx="300" cy="230" r="10"/><circle cx="200" cy="180" r="10"/>
+    <path d="M20 360 H380"/></svg>`,
+  snowman: `<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round">
+    <circle cx="200" cy="120" r="55"/><circle cx="200" cy="240" r="80" />
+    <path d="M148 100 H252 M160 66 h80 v-40 h-80 Z"/>
+    <circle cx="182" cy="112" r="5" fill="#000"/><circle cx="218" cy="112" r="5" fill="#000"/>
+    <path d="M200 126 l26 8 l-26 8 Z"/>
+    <circle cx="200" cy="215" r="6" fill="#000"/><circle cx="200" cy="245" r="6" fill="#000"/><circle cx="200" cy="275" r="6" fill="#000"/>
+    <path d="M130 200 L80 160 M80 160 l-16 -6 M80 160 l-4 -16 M270 200 L320 160 M320 160 l16 -6 M320 160 l4 -16"/>
+    <path d="M40 350 H360"/></svg>`
+};
+
+function buildPrintHtml(args) {
+  const title = args.title || (args.kind === 'coloring' ? '艾莎送你的涂色画' : args.kind === 'letter' ? '艾莎的信' : '艾莎的小故事');
+  const body = args.kind === 'coloring'
+    ? `<div style="width:100%">${COLORING_SVGS[args.theme] || COLORING_SVGS.snowflake}</div>`
+    : `<div style="font-size:22px;line-height:2;white-space:pre-wrap">${String(args.text || '').replace(/</g, '&lt;')}</div>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
+  <body style="font-family:-apple-system,'PingFang SC',sans-serif;padding:40px;color:#000">
+    <div style="text-align:center;font-size:30px;margin-bottom:8px">❄️ ${title} ❄️</div>
+    <div style="text-align:center;font-size:14px;color:#666;margin-bottom:24px">来自魔镜里的艾莎 · 送给 Kiwi</div>
+    ${body}
+  </body></html>`;
+}
+
+function printForKiwi(args) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+  document.body.appendChild(f);
+  f.onload = () => {
+    try { f.contentWindow.focus(); f.contentWindow.print(); } catch (_) {}
+    setTimeout(() => f.remove(), 60000);
+  };
+  f.srcdoc = buildPrintHtml(args);
 }
 
 // ---------- 读书进度与庆祝 ----------

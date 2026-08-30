@@ -97,6 +97,18 @@ class ElsaRealtime {
     this._send({ type: 'response.create', response: { instructions: instructionText } });
   }
 
+  // 把一张照片放进对话（魔镜的"眼睛"）
+  sendImage(dataUrl) {
+    this._send({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_image', image_url: dataUrl }]
+      }
+    });
+  }
+
   _handleEvent(ev) {
     switch (ev.type) {
       case 'error':
