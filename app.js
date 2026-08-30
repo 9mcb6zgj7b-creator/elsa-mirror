@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v12';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v13';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -222,7 +222,7 @@ const TOOLS = [{
     type: 'object',
     properties: {
       kind: { type: 'string', enum: ['coloring', 'story', 'letter'] },
-      theme: { type: 'string', enum: ['snowflake', 'castle', 'snowman'], description: 'coloring 时必选' },
+      subject: { type: 'string', description: 'coloring 时必填：Kiwi 想要的画面内容，中文自由描述，如"一只独角兽在彩虹下"' },
       title: { type: 'string', description: '标题' },
       text: { type: 'string', description: 'story/letter 的完整内容' }
     },
@@ -256,6 +256,20 @@ async function handleToolCall(name, args) {
     }
   }
   if (name === 'print_for_kiwi') {
+    if (args.kind === 'coloring' && cfg.apiKey) {
+      // 现场绘制 Kiwi 想要的涂色画（约半分钟），画好自动弹打印窗口
+      generateColoringImage(args.subject || '漂亮的大雪花')
+        .then(img => {
+          printForKiwi({ ...args, imageData: img });
+          if (session) session.speak('涂色画画好啦，打印窗口已经弹出。告诉 Kiwi 按下屏幕上的"打印"按钮。');
+        })
+        .catch(e => {
+          recordError(e);
+          printForKiwi(args);   // 回退到内置线稿
+          if (session) session.speak('刚才的魔法笔没画成，先给 Kiwi 打一张备用的涂色画，温柔地说明一下。');
+        });
+      return { ok: true, note: '正在绘制，约需半分钟。先告诉 Kiwi："魔法画笔正在画，等雪花转三圈就好啦"，画好后你会收到提示' };
+    }
     try {
       printForKiwi(args);
       return { ok: true, note: '打印窗口已弹出，等 Kiwi 按下打印键' };
@@ -317,6 +331,23 @@ function stopCamera() {
 }
 
 // ---------- 打印（AirPrint） ----------
+// 用画图模型现场生成涂色线稿
+async function generateColoringImage(subject) {
+  const r = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: `Simple coloring book page for a young child: ${subject}. Thick clean black outlines only, no shading, no color fill, pure white background, cute friendly style, large simple shapes that are easy for a toddler to color.`,
+      size: '1024x1536',
+      quality: 'low'
+    })
+  });
+  if (!r.ok) throw new Error(`涂色画生成失败 HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const j = await r.json();
+  return 'data:image/png;base64,' + j.data[0].b64_json;
+}
+
 const COLORING_SVGS = {
   snowflake: `<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round">
     <g transform="translate(200,200)">
@@ -347,7 +378,9 @@ const COLORING_SVGS = {
 function buildPrintHtml(args) {
   const title = args.title || (args.kind === 'coloring' ? '艾莎送你的涂色画' : args.kind === 'letter' ? '艾莎的信' : '艾莎的小故事');
   const body = args.kind === 'coloring'
-    ? `<div style="width:100%">${COLORING_SVGS[args.theme] || COLORING_SVGS.snowflake}</div>`
+    ? (args.imageData
+        ? `<img src="${args.imageData}" style="width:100%">`
+        : `<div style="width:100%">${COLORING_SVGS[args.theme] || COLORING_SVGS.snowflake}</div>`)
     : `<div style="font-size:22px;line-height:2;white-space:pre-wrap">${String(args.text || '').replace(/</g, '&lt;')}</div>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
   <body style="font-family:-apple-system,'PingFang SC',sans-serif;padding:40px;color:#000">
