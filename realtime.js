@@ -9,7 +9,8 @@ class ElsaRealtime {
     this.onToolCall = opts.onToolCall || (() => ({}));
     this.onSpeakingChange = opts.onSpeakingChange || (() => {});
     this.onActivity = opts.onActivity || (() => {});   // 任一方有语音活动时触发（用于闲置计时）
-    this.onError = opts.onError || console.error;
+    this.onError = opts.onError || console.error;              // 连接级致命错误
+    this.onApiError = opts.onApiError || console.error;        // 会话内非致命错误（记录但不挂断）
     this.audioEl = opts.audioEl;
     this.pc = null;
     this.dc = null;
@@ -111,15 +112,18 @@ class ElsaRealtime {
 
   _handleEvent(ev) {
     switch (ev.type) {
-      case 'error':
-        // GA session 格式不被支持时，降级重发一次
-        if (!this._legacySession && /session|unknown|invalid/i.test(JSON.stringify(ev.error || {}))) {
+      case 'error': {
+        const msg = JSON.stringify(ev.error || {});
+        // 仅当明确是 session.update 格式问题时才降级重发一次
+        if (!this._legacySession && /session/i.test(msg) && /param|invalid|unknown/i.test(msg)) {
           this._legacySession = true;
           this._sendSessionUpdate();
           return;
         }
-        this.onError(ev.error);
+        // 会话内错误（如某个 item 被拒）记录但不挂断对话
+        this.onApiError(ev.error);
         break;
+      }
       case 'input_audio_buffer.speech_started':
         this.onActivity();
         break;

@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v13';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v14';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -126,6 +126,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     onToolCall: handleToolCall,
     onSpeakingChange: (speaking) => { eventSpeaking = speaking; },
     onActivity: bumpIdle,
+    onApiError: (err) => { console.warn('realtime api error', err); recordError(err); },
     onError: (err) => {
       console.error('realtime error', err);
       recordError(err);
@@ -243,9 +244,17 @@ const TOOLS = [{
 }];
 
 async function handleToolCall(name, args) {
+  const res = await doToolCall(name, args);
+  cfg.lastTool = { time: new Date().toLocaleString('zh-CN'), name, info: JSON.stringify(res).slice(0, 150) };
+  saveCfg();
+  return res;
+}
+
+async function doToolCall(name, args) {
   if (name === 'look_with_eyes') {
     try {
       statusText.textContent = '艾莎在看… 👀';
+      statusHoldUntil = performance.now() + 4000;   // 提示保持 4 秒，不被状态刷新覆盖
       const dataUrl = await captureCameraFrame();
       if (session && session.sendImage) session.sendImage(dataUrl);
       return { ok: true, note: '照片已放进对话，请根据看到的内容回应 Kiwi' };
@@ -452,6 +461,7 @@ setInterval(() => {
 let eventSpeaking = false;
 let audioLastLoudMs = 0;
 let speakingShown = false;
+let statusHoldUntil = 0;   // 在此时间点前，animate 不覆盖状态文字（用于"艾莎在看"等提示）
 
 function animate() {
   const now = performance.now();
@@ -461,7 +471,9 @@ function animate() {
   if (speaking !== speakingShown) {
     speakingShown = speaking;
     setSpeakingVisual(speaking);
-    if (state === 'awake') statusText.textContent = speaking ? '艾莎在说话…' : '艾莎在听 👂';
+    if (state === 'awake' && now >= statusHoldUntil) {
+      statusText.textContent = speaking ? '艾莎在说话…' : '艾莎在听 👂';
+    }
   }
   const open = Math.min(10, level * 14);
   mouthOpen.setAttribute('ry', String(open));
@@ -636,7 +648,10 @@ function renderLog() {
     : '';
   const d = wakeWordCtl ? wakeWordCtl.diag() : {};
   const wakeHtml = `<div class="log-day">🎙 语音唤醒诊断：识别接口${d.sr ? '✅支持' : '❌不支持'} · 主屏幕模式${d.standalone ? '是' : '否'} · 正在监听${d.listening ? '✅' : '❌'} · 错误${d.errCount || 0}次${d.lastErr ? '（最近：' + d.lastErr + '）' : ''}</div>`;
-  $('#log-view').innerHTML = wakeHtml + errHtml + (days.length
+  const toolHtml = cfg.lastTool
+    ? `<div class="log-day">🔧 最近一次工具调用（${cfg.lastTool.time}）：${cfg.lastTool.name}<br>${String(cfg.lastTool.info).replace(/</g, '&lt;')}</div>`
+    : '';
+  $('#log-view').innerHTML = wakeHtml + toolHtml + errHtml + (days.length
     ? days.map(d => {
         const l = cfg.log[d];
         return `<div class="log-day">${d} — 读书 ${l.books}/${cfg.booksGoal} 本 · 对话 ${l.minutes} 分钟</div>`;
