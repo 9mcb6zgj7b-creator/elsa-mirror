@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v15';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v16';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -76,8 +76,9 @@ let idleTimer = null;
 let sessionStartMs = 0;
 let wakeWordCtl = null;   // 语音唤醒控制器（wakeWord 初始化后赋值）
 
-const SR_OK = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-const WAKE_HINT = SR_OK ? '喊"hello 艾莎"，或轻拍雪花 ❄️' : '轻拍雪花，叫醒艾莎 ❄️';
+// 默认只提示拍雪花；语音监听真正启动时（onstart）才把提示升级为"喊 hello 艾莎"
+// （iPad 主屏幕模式下系统禁用网页语音识别 service-not-allowed，不能误导）
+const WAKE_HINT = '轻拍雪花，叫醒艾莎 ❄️';
 
 function setState(s, text) {
   state = s;
