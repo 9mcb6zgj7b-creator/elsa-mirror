@@ -19,8 +19,6 @@ class ElsaRealtime {
     this.analyser = null;
     this.model = 'gpt-realtime';
     this._legacySession = false; // GA session 格式被拒时降级为 beta 格式
-    this._responseActive = false;   // 服务器是否有回复正在生成/播放
-    this._pendingResponses = [];    // 排队等待的 response.create 载荷
   }
 
   async connect() {
@@ -96,27 +94,10 @@ class ElsaRealtime {
     if (this.dc && this.dc.readyState === 'open') this.dc.send(JSON.stringify(obj));
   }
 
-  // 请求一次回应；若已有回复在进行则排队，等它结束再发
-  // （硬发会被服务器以 "already has an active response" 拒绝）
-  // resp 为 null 时发不带 response 字段的裸 response.create（与 v14 工具回应格式一致）
+  // 直发回应请求（v14 行为：不排队、不重发；撞上进行中的回复就让服务器拒绝，只记日志）
   _createResponse(resp) {
-    if (this._responseActive) {
-      this._pendingResponses.push(resp);
-      this.onDebug('排队回应请求（当前有回复进行中）');
-      return;
-    }
-    this._lastResp = resp;
     this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
-    this.onDebug('直发回应请求' + (resp && resp.instructions ? '（带指令）' : ''));
-  }
-
-  _flushPending() {
-    if (!this._responseActive && this._pendingResponses.length) {
-      const resp = this._pendingResponses.shift();
-      this._lastResp = resp;
-      this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
-      this.onDebug(`重发排队的回应请求（剩余${this._pendingResponses.length}）`);
-    }
+    this.onDebug('发出回应请求' + (resp && resp.instructions ? '（带指令）' : ''));
   }
 
   // 让艾莎按指令主动说一段话（打招呼、定时提醒、道别）
@@ -143,9 +124,8 @@ class ElsaRealtime {
         const msg = JSON.stringify(ev.error || {});
         // 撞上正在进行的回复：把刚才的请求重新排队，等 response.done 后自动重发
         if (/active response/i.test(msg)) {
-          this._responseActive = true;
-          if (this._lastResp !== undefined) { this._pendingResponses.unshift(this._lastResp); this._lastResp = undefined; }
-          this.onDebug('回应请求撞车，已重新排队');
+          // v14 行为：忽略撞车（通常是服务器自动回复与我们的请求相遇），不重发不干预
+          this.onDebug('回应请求撞车（已忽略）');
           return;
         }
         // 仅当明确是 session.update 格式问题时才降级重发一次
@@ -163,7 +143,7 @@ class ElsaRealtime {
         break;
       case 'output_audio_buffer.started':
       case 'response.created':
-        if (ev.type === 'response.created') { this._responseActive = true; this.onDebug('回复开始'); }
+        if (ev.type === 'response.created') this.onDebug('回复开始');
         this.onSpeakingChange(true);
         this.onActivity();
         break;
@@ -172,10 +152,8 @@ class ElsaRealtime {
         this.onSpeakingChange(false);
         this.onActivity();
         if (ev.type === 'response.done') {
-          this._responseActive = false;
           this.onDebug(`回复结束（${(ev.response && ev.response.status) || '?'}）`);
-          // finally：工具处理无论成败都要 flush，避免队列卡死
-          this._handleToolCalls(ev).catch(e => this.onApiError(String(e))).then(() => this._flushPending());
+          this._handleToolCalls(ev).catch(e => this.onApiError(String(e)));
         }
         break;
     }
