@@ -1,12 +1,14 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v18';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v19';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
 // ---------- 配置与记录 ----------
 const DEFAULT_CFG = {
   apiKey: '',
+  gApiKey: '',
+  provider: 'gpt-realtime',   // gpt-realtime | gpt-realtime-mini | gemini
   voice: 'marin',
   persona: DEFAULT_PERSONA,
   booksGoal: 3,
@@ -117,9 +119,11 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
   }
 
   setState('waking', '艾莎正在赶来…');
-  const Session = cfg.apiKey ? ElsaRealtime : MockRealtime;
+  const useGemini = cfg.provider === 'gemini' && cfg.gApiKey;
+  const Session = useGemini ? GeminiRealtime : (cfg.apiKey ? ElsaRealtime : MockRealtime);
   session = new Session({
-    apiKey: cfg.apiKey,
+    apiKey: useGemini ? cfg.gApiKey : cfg.apiKey,
+    model: cfg.provider === 'gpt-realtime-mini' ? 'gpt-realtime-mini' : 'gpt-realtime',
     voice: cfg.voice,
     instructions: buildInstructions(),
     tools: TOOLS,
@@ -611,6 +615,8 @@ const panel = $('#parent-panel');
 function openPanel() {
   sleep(false);
   $('#cfg-key').value = cfg.apiKey;
+  $('#cfg-gkey').value = cfg.gApiKey;
+  $('#cfg-provider').value = cfg.provider;
   $('#cfg-voice').value = cfg.voice;
   $('#cfg-books').value = cfg.booksGoal;
   $('#cfg-limit').value = cfg.dailyLimitMin;
@@ -676,8 +682,20 @@ function renderLog() {
 
 // 测试 API Key：验证 Key 有效性和网络连通，不发起真实对话
 $('#key-test').addEventListener('click', async () => {
-  const key = $('#cfg-key').value.trim();
+  const provider = $('#cfg-provider').value;
   const out = $('#key-test-result');
+  // 选 Gemini 时测 Gemini Key，否则测 OpenAI Key
+  if (provider === 'gemini') {
+    const gkey = $('#cfg-gkey').value.trim();
+    if (!gkey) { out.textContent = '请先填入 Gemini Key'; return; }
+    out.textContent = '测试中…';
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(gkey)}`);
+      out.textContent = r.ok ? '✅ Gemini Key 有效，保存后拍雪花即可对话' : `❌ Gemini Key 无效（HTTP ${r.status}）`;
+    } catch (e) { out.textContent = '❌ 网络不通：' + e.message; }
+    return;
+  }
+  const key = $('#cfg-key').value.trim();
   if (!key) { out.textContent = '请先在上面填入 Key'; return; }
   out.textContent = '测试中…';
   try {
@@ -746,6 +764,8 @@ $('#persona-reset').addEventListener('click', () => { $('#cfg-persona').value = 
 
 $('#cfg-save').addEventListener('click', () => {
   cfg.apiKey = $('#cfg-key').value.trim();
+  cfg.gApiKey = $('#cfg-gkey').value.trim();
+  cfg.provider = $('#cfg-provider').value;
   cfg.voice = $('#cfg-voice').value;
   cfg.booksGoal = Math.max(1, +$('#cfg-books').value || 3);
   cfg.dailyLimitMin = Math.max(5, +$('#cfg-limit').value || 60);

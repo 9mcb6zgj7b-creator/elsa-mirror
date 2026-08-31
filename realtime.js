@@ -17,7 +17,7 @@ class ElsaRealtime {
     this.dc = null;
     this.mic = null;
     this.analyser = null;
-    this.model = 'gpt-realtime';
+    this.model = opts.model || 'gpt-realtime';
     this._legacySession = false; // GA session 格式被拒时降级为 beta 格式
   }
 
@@ -207,6 +207,235 @@ class ElsaRealtime {
     try { this.mic && this.mic.getTracks().forEach(t => t.stop()); } catch (_) {}
     try { this._audioCtx && this._audioCtx.close(); } catch (_) {}
     this.pc = this.dc = this.mic = this.analyser = null;
+  }
+}
+
+// Gemini Live API 封装（WebSocket + PCM 音频流），与 ElsaRealtime 同接口
+class GeminiRealtime {
+  constructor(opts) {
+    this.apiKey = opts.apiKey;
+    this.instructions = opts.instructions;
+    this.tools = opts.tools || [];
+    this.onToolCall = opts.onToolCall || (() => ({}));
+    this.onSpeakingChange = opts.onSpeakingChange || (() => {});
+    this.onActivity = opts.onActivity || (() => {});
+    this.onError = opts.onError || console.error;
+    this.onApiError = opts.onApiError || console.error;
+    this.onDebug = opts.onDebug || (() => {});
+    this.ws = null;
+    this.mic = null;
+    this._ready = false;
+    this._nextT = 0;
+    this._activeSources = [];
+    this._lastActivityPing = 0;
+    // 模型候选：新款原生语音优先，握手失败自动降级
+    this._models = [
+      'models/gemini-2.5-flash-native-audio-preview-09-2025',
+      'models/gemini-live-2.5-flash-preview',
+      'models/gemini-2.0-flash-live-001'
+    ];
+  }
+
+  async connect() {
+    this.mic = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
+    this._playCtx = new (window.AudioContext || window.webkitAudioContext)();
+    this.analyser = this._playCtx.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.connect(this._playCtx.destination);
+
+    let lastErr;
+    for (const model of this._models) {
+      try {
+        await this._openWs(model);
+        this.onDebug(`Gemini 连接成功（${model.split('/')[1]}）`);
+        this._startMicPump();
+        return;
+      } catch (e) {
+        lastErr = e;
+        this.onDebug(`Gemini 模型 ${model.split('/')[1]} 握手失败，换下一个`);
+      }
+    }
+    throw lastErr || new Error('Gemini 所有候选模型握手失败');
+  }
+
+  _openWs(model) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(
+        `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`
+      );
+      let settled = false;
+      const fail = (e) => { if (!settled) { settled = true; try { ws.close(); } catch (_) {} reject(e); } };
+      const timer = setTimeout(() => fail(new Error('握手超时')), 10000);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          setup: {
+            model,
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
+            },
+            systemInstruction: { parts: [{ text: this.instructions }] },
+            tools: [{
+              functionDeclarations: this.tools.map(t => {
+                const d = { name: t.name, description: t.description };
+                // Gemini 对空 properties 的 parameters 挑剔，无参数时整个省略
+                if (t.parameters && t.parameters.properties && Object.keys(t.parameters.properties).length) {
+                  d.parameters = t.parameters;
+                }
+                return d;
+              })
+            }]
+          }
+        }));
+      };
+      ws.onmessage = async (e) => {
+        const text = typeof e.data === 'string' ? e.data : await e.data.text();
+        let msg;
+        try { msg = JSON.parse(text); } catch (_) { return; }
+        if (msg.setupComplete && !settled) {
+          settled = true;
+          clearTimeout(timer);
+          this.ws = ws;
+          this._ready = true;
+          ws.onclose = () => { this._ready = false; this.onDebug('Gemini 连接关闭'); };
+          resolve();
+          return;
+        }
+        this._handleMsg(msg);
+      };
+      ws.onerror = () => fail(new Error('WebSocket 错误'));
+      ws.onclose = (e) => fail(new Error('连接被关闭 ' + (e.code || '')));
+    });
+  }
+
+  _sendJson(obj) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
+  }
+
+  async _handleMsg(msg) {
+    this.onActivity();
+    const sc = msg.serverContent;
+    if (sc) {
+      if (sc.interrupted) {
+        this._activeSources.forEach(s => { try { s.stop(); } catch (_) {} });
+        this._activeSources = [];
+        this._nextT = 0;
+        this.onSpeakingChange(false);
+        return;
+      }
+      const parts = (sc.modelTurn && sc.modelTurn.parts) || [];
+      for (const p of parts) {
+        if (p.inlineData && /audio/i.test(p.inlineData.mimeType || '')) this._playChunk(p.inlineData.data);
+      }
+    }
+    if (msg.toolCall && msg.toolCall.functionCalls) {
+      for (const fc of msg.toolCall.functionCalls) {
+        const result = await this.onToolCall(fc.name, fc.args || {});
+        this._sendJson({ toolResponse: { functionResponses: [{ id: fc.id, name: fc.name, response: result || {} }] } });
+      }
+    }
+  }
+
+  _playChunk(b64) {
+    try {
+      const bin = atob(b64);
+      const n = bin.length >> 1;
+      const buf = this._playCtx.createBuffer(1, n, 24000);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        const lo = bin.charCodeAt(2 * i), hi = bin.charCodeAt(2 * i + 1);
+        let v = (hi << 8) | lo;
+        if (v >= 0x8000) v -= 0x10000;
+        ch[i] = v / 0x8000;
+      }
+      const src = this._playCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.analyser);
+      const t = Math.max(this._playCtx.currentTime + 0.05, this._nextT);
+      src.start(t);
+      this._nextT = t + buf.duration;
+      this._activeSources.push(src);
+      this.onSpeakingChange(true);
+      src.onended = () => {
+        this._activeSources = this._activeSources.filter(s => s !== src);
+        if (!this._activeSources.length) this.onSpeakingChange(false);
+      };
+    } catch (e) { this.onApiError('音频块解码失败: ' + e.message); }
+  }
+
+  _startMicPump() {
+    this._micCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = this._micCtx.createMediaStreamSource(this.mic);
+    const proc = this._micCtx.createScriptProcessor(4096, 1, 1);
+    const mute = this._micCtx.createGain();
+    mute.gain.value = 0;
+    src.connect(proc);
+    proc.connect(mute);
+    mute.connect(this._micCtx.destination);
+    proc.onaudioprocess = (e) => {
+      if (!this._ready) return;
+      const input = e.inputBuffer.getChannelData(0);
+      // 说话活动检测（驱动闲置计时），2 秒节流
+      let sum = 0;
+      for (let i = 0; i < input.length; i += 16) sum += Math.abs(input[i]);
+      if (sum / (input.length / 16) > 0.02 && Date.now() - this._lastActivityPing > 2000) {
+        this._lastActivityPing = Date.now();
+        this.onActivity();
+      }
+      // 降采样到 16kHz PCM16
+      const ratio = e.inputBuffer.sampleRate / 16000;
+      const outLen = Math.floor(input.length / ratio);
+      const bytes = new Uint8Array(outLen * 2);
+      for (let i = 0; i < outLen; i++) {
+        let v = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)]));
+        v = (v * 0x7fff) | 0;
+        bytes[2 * i] = v & 0xff;
+        bytes[2 * i + 1] = (v >> 8) & 0xff;
+      }
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+      this._sendJson({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: btoa(bin) }] } });
+    };
+    this._micProc = proc;
+  }
+
+  // 让艾莎按指令主动说话（打招呼、提醒、道别）
+  speak(instructionText) {
+    this._sendJson({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text: `[系统指令，请直接照做，不要复述] ${instructionText}` }] }],
+        turnComplete: true
+      }
+    });
+    this.onDebug('发出回应请求（Gemini 指令）');
+  }
+
+  sendImage(dataUrl) {
+    const b64 = dataUrl.split(',')[1] || '';
+    this._sendJson({ realtimeInput: { mediaChunks: [{ mimeType: 'image/jpeg', data: b64 }] } });
+    this.onDebug(`照片已发进对话（Gemini，${Math.round(b64.length / 1024)}KB）`);
+  }
+
+  getLevel() {
+    if (!this.analyser) return 0;
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(data);
+    let sum = 0;
+    for (const v of data) sum += v;
+    return Math.min(1, (sum / data.length) / 90);
+  }
+
+  close() {
+    this._ready = false;
+    try { this._micProc && this._micProc.disconnect(); } catch (_) {}
+    try { this.ws && this.ws.close(); } catch (_) {}
+    try { this.mic && this.mic.getTracks().forEach(t => t.stop()); } catch (_) {}
+    try { this._micCtx && this._micCtx.close(); } catch (_) {}
+    try { this._playCtx && this._playCtx.close(); } catch (_) {}
+    this.ws = this.mic = this.analyser = null;
   }
 }
 

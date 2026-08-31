@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>艾莎魔镜</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -157,7 +157,18 @@
     <p class="hint">不填则进入演示模式（用系统语音念台词，不联网、不花钱）。Key 只保存在这台 iPad 的浏览器里。</p>
     <button id="key-test" class="secondary">测试 API Key</button>
     <p class="hint" id="key-test-result"></p>
-    <label>音色
+    <label>大脑模型
+      <select id="cfg-provider">
+        <option value="gpt-realtime">OpenAI 完整版（最聪明，最贵）</option>
+        <option value="gpt-realtime-mini">OpenAI mini（约 1/4 价格，推荐先试）</option>
+        <option value="gemini">Gemini Live（最便宜/免费额度大，需下方 Gemini Key）</option>
+      </select>
+    </label>
+    <label>Gemini API Key（选 Gemini 时需要）
+      <input type="password" id="cfg-gkey" placeholder="AIza..." autocomplete="off">
+    </label>
+    <p class="hint">Gemini Key 在 aistudio.google.com 免费申请。涂色画生成始终走 OpenAI Key。</p>
+    <label>音色（仅 OpenAI 生效；Gemini 固定用温暖女声 Aoede）
       <select id="cfg-voice">
         <option value="marin">Marin（温暖女声，推荐）</option>
         <option value="alloy">Alloy</option>
@@ -203,8 +214,8 @@
 <audio id="remote-audio" autoplay playsinline></audio>
 <video id="cam" playsinline muted style="display:none"></video>
 
-<script src="persona.js?v=18"></script>
-<script src="realtime.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="persona.js?v=19"></script>
+<script src="realtime.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
