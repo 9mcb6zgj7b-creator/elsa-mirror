@@ -18,6 +18,8 @@ class ElsaRealtime {
     this.analyser = null;
     this.model = 'gpt-realtime';
     this._legacySession = false; // GA session 格式被拒时降级为 beta 格式
+    this._responseActive = false;   // 服务器是否有回复正在生成/播放
+    this._pendingResponses = [];    // 排队等待的 response.create 载荷
   }
 
   async connect() {
@@ -93,9 +95,25 @@ class ElsaRealtime {
     if (this.dc && this.dc.readyState === 'open') this.dc.send(JSON.stringify(obj));
   }
 
+  // 请求一次回应；若已有回复在进行则排队，等它结束再发
+  // （硬发会被服务器以 "already has an active response" 拒绝）
+  _createResponse(resp) {
+    if (this._responseActive) { this._pendingResponses.push(resp); return; }
+    this._lastResp = resp;
+    this._send({ type: 'response.create', response: resp });
+  }
+
+  _flushPending() {
+    if (!this._responseActive && this._pendingResponses.length) {
+      const resp = this._pendingResponses.shift();
+      this._lastResp = resp;
+      this._send({ type: 'response.create', response: resp });
+    }
+  }
+
   // 让艾莎按指令主动说一段话（打招呼、定时提醒、道别）
   speak(instructionText) {
-    this._send({ type: 'response.create', response: { instructions: instructionText } });
+    this._createResponse({ instructions: instructionText });
   }
 
   // 把一张照片放进对话（魔镜的"眼睛"）
@@ -114,6 +132,12 @@ class ElsaRealtime {
     switch (ev.type) {
       case 'error': {
         const msg = JSON.stringify(ev.error || {});
+        // 撞上正在进行的回复：把刚才的请求重新排队，等 response.done 后自动重发
+        if (/active response/i.test(msg)) {
+          this._responseActive = true;
+          if (this._lastResp) { this._pendingResponses.unshift(this._lastResp); this._lastResp = null; }
+          return;
+        }
         // 仅当明确是 session.update 格式问题时才降级重发一次
         if (!this._legacySession && /session/i.test(msg) && /param|invalid|unknown/i.test(msg)) {
           this._legacySession = true;
@@ -129,6 +153,7 @@ class ElsaRealtime {
         break;
       case 'output_audio_buffer.started':
       case 'response.created':
+        if (ev.type === 'response.created') this._responseActive = true;
         this.onSpeakingChange(true);
         this.onActivity();
         break;
@@ -136,7 +161,10 @@ class ElsaRealtime {
       case 'response.done':
         this.onSpeakingChange(false);
         this.onActivity();
-        if (ev.type === 'response.done') this._handleToolCalls(ev);
+        if (ev.type === 'response.done') {
+          this._responseActive = false;
+          this._handleToolCalls(ev).then(() => this._flushPending());
+        }
         break;
     }
   }
@@ -156,7 +184,7 @@ class ElsaRealtime {
           output: JSON.stringify(result || {})
         }
       });
-      this._send({ type: 'response.create' });
+      this._createResponse({});
     }
   }
 

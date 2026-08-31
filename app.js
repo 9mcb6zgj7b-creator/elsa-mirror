@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v14';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v15';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
