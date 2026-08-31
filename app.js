@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v20';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v21';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -78,6 +78,16 @@ let session = null;
 let idleTimer = null;
 let sessionStartMs = 0;
 let wakeWordCtl = null;   // 语音唤醒控制器（wakeWord 初始化后赋值）
+// "看"的优先流程：拍照到读完期间静音麦克风，保证不被任何声音打断
+// 0=未启用 1=已静音等艾莎开口 2=艾莎正在讲看到的内容
+let lookMute = 0;
+let lookMuteTimer = null;
+
+function endLookMute() {
+  lookMute = 0;
+  clearTimeout(lookMuteTimer);
+  if (session && session.setMicEnabled) session.setMicEnabled(true);
+}
 
 // 默认只提示拍雪花；语音监听真正启动时（onstart）才把提示升级为"喊 hello 艾莎"
 // （iPad 主屏幕模式下系统禁用网页语音识别 service-not-allowed，不能误导）
@@ -131,7 +141,12 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     tools: TOOLS,
     audioEl: $('#remote-audio'),
     onToolCall: handleToolCall,
-    onSpeakingChange: (speaking) => { eventSpeaking = speaking; },
+    onSpeakingChange: (speaking) => {
+      eventSpeaking = speaking;
+      // "看"的流程：等艾莎开始讲看到的内容，讲完再恢复听
+      if (lookMute === 1 && speaking) lookMute = 2;
+      else if (lookMute === 2 && !speaking) endLookMute();
+    },
     onActivity: bumpIdle,
     onApiError: (err) => { console.warn('realtime api error', err); recordError(err); },
     onDebug: recordTrail,
@@ -178,6 +193,8 @@ function teardown() {
   if (session) { session.close(); session = null; }
   eventSpeaking = false;
   audioLastLoudMs = 0;
+  lookMute = 0;
+  clearTimeout(lookMuteTimer);
   stopCamera();
   // 对话过一次后麦克风权限大概率已授予，给语音唤醒一次重试机会
   if (wakeWordCtl) wakeWordCtl.reset();
@@ -271,6 +288,13 @@ async function doToolCall(name, args) {
     try {
       statusText.textContent = '艾莎在看… 👀';
       statusHoldUntil = performance.now() + 4000;   // 提示保持 4 秒，不被状态刷新覆盖
+      // "看"优先于一切：拍照到讲完期间静音麦克风，保证流程不被打断
+      if (session && session.setMicEnabled) {
+        session.setMicEnabled(false);
+        lookMute = 1;
+        clearTimeout(lookMuteTimer);
+        lookMuteTimer = setTimeout(endLookMute, 45000);   // 兜底：最长 45 秒后强制恢复听
+      }
       recordTrail('开始拍照');
       const dataUrl = await captureCameraFrame();
       recordTrail('拍照完成');

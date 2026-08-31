@@ -105,6 +105,12 @@ class ElsaRealtime {
     if (this.dc && this.dc.readyState === 'open') this.dc.send(JSON.stringify(obj));
   }
 
+  // 开/关麦克风（关闭时向服务器送静音，"看"的流程期间用它保证不被打断）
+  setMicEnabled(on) {
+    if (this.mic) this.mic.getAudioTracks().forEach(t => { t.enabled = !!on; });
+    this.onDebug(on ? '恢复听麦克风' : '暂停听麦克风');
+  }
+
   // 直发回应请求（v14 行为：不排队、不重发；撞上进行中的回复就让服务器拒绝，只记日志）
   _createResponse(resp) {
     this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
@@ -411,6 +417,11 @@ class GeminiRealtime {
       this._sendJson({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: btoa(bin) }] } });
     };
     this._micProc = proc;
+  }
+
+  setMicEnabled(on) {
+    if (this.mic) this.mic.getAudioTracks().forEach(t => { t.enabled = !!on; });
+    this.onDebug(on ? '恢复听麦克风' : '暂停听麦克风');
   }
 
   // 让艾莎按指令主动说话（打招呼、提醒、道别）
