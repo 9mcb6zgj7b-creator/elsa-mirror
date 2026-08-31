@@ -18,6 +18,8 @@ class ElsaRealtime {
     this.mic = null;
     this.analyser = null;
     this.model = opts.model || 'gpt-realtime';
+    // 打断阈值：越高越不容易被环境噪音打断（碰桌子/关门声等）
+    this.vadThreshold = opts.vadThreshold || 0.7;
     this._legacySession = false; // GA session 格式被拒时降级为 beta 格式
   }
 
@@ -69,6 +71,15 @@ class ElsaRealtime {
     throw lastErr;
   }
 
+  _vadConfig() {
+    return {
+      type: 'server_vad',
+      threshold: this.vadThreshold,      // 默认 0.5 太灵敏，碰桌子都会打断艾莎
+      prefix_padding_ms: 300,
+      silence_duration_ms: 800
+    };
+  }
+
   _sendSessionUpdate() {
     const session = this._legacySession
       ? { // beta 格式
@@ -76,14 +87,14 @@ class ElsaRealtime {
           voice: this.voice,
           instructions: this.instructions,
           tools: this.tools,
-          turn_detection: { type: 'server_vad', silence_duration_ms: 700 }
+          turn_detection: this._vadConfig()
         }
       : { // GA 格式
           type: 'realtime',
           instructions: this.instructions,
           tools: this.tools,
           audio: {
-            input: { turn_detection: { type: 'server_vad', silence_duration_ms: 700 } },
+            input: { turn_detection: this._vadConfig() },
             output: { voice: this.voice }
           }
         };

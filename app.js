@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v19';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v20';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -9,6 +9,7 @@ const DEFAULT_CFG = {
   apiKey: '',
   gApiKey: '',
   provider: 'gpt-realtime',   // gpt-realtime | gpt-realtime-mini | gemini
+  sensitivity: 'standard',    // sensitive(0.5) | standard(0.7) | noisy(0.85)
   voice: 'marin',
   persona: DEFAULT_PERSONA,
   booksGoal: 3,
@@ -124,6 +125,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
   session = new Session({
     apiKey: useGemini ? cfg.gApiKey : cfg.apiKey,
     model: cfg.provider === 'gpt-realtime-mini' ? 'gpt-realtime-mini' : 'gpt-realtime',
+    vadThreshold: { sensitive: 0.5, standard: 0.7, noisy: 0.85 }[cfg.sensitivity] || 0.7,
     voice: cfg.voice,
     instructions: buildInstructions(),
     tools: TOOLS,
@@ -617,6 +619,7 @@ function openPanel() {
   $('#cfg-key').value = cfg.apiKey;
   $('#cfg-gkey').value = cfg.gApiKey;
   $('#cfg-provider').value = cfg.provider;
+  $('#cfg-sensitivity').value = cfg.sensitivity;
   $('#cfg-voice').value = cfg.voice;
   $('#cfg-books').value = cfg.booksGoal;
   $('#cfg-limit').value = cfg.dailyLimitMin;
@@ -766,6 +769,7 @@ $('#cfg-save').addEventListener('click', () => {
   cfg.apiKey = $('#cfg-key').value.trim();
   cfg.gApiKey = $('#cfg-gkey').value.trim();
   cfg.provider = $('#cfg-provider').value;
+  cfg.sensitivity = $('#cfg-sensitivity').value;
   cfg.voice = $('#cfg-voice').value;
   cfg.booksGoal = Math.max(1, +$('#cfg-books').value || 3);
   cfg.dailyLimitMin = Math.max(5, +$('#cfg-limit').value || 60);

@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>艾莎魔镜</title>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -176,6 +176,13 @@
         <option value="coral">Coral</option>
       </select>
     </label>
+    <label>麦克风灵敏度（仅 OpenAI 生效）
+      <select id="cfg-sensitivity">
+        <option value="standard">标准（推荐）</option>
+        <option value="sensitive">灵敏（很安静的房间/孩子声音小）</option>
+        <option value="noisy">抗噪（客厅嘈杂、艾莎老被杂音打断时选这个）</option>
+      </select>
+    </label>
     <label>每天读书目标（本）
       <input type="number" id="cfg-books" min="1" max="10" value="3">
     </label>
@@ -214,8 +221,8 @@
 <audio id="remote-audio" autoplay playsinline></audio>
 <video id="cam" playsinline muted style="display:none"></video>
 
-<script src="persona.js?v=19"></script>
-<script src="realtime.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="persona.js?v=20"></script>
+<script src="realtime.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
