@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v16';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v17';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -128,6 +128,7 @@ async function wake(reason) {   // reason: {type:'tap'} | {type:'reminder', labe
     onSpeakingChange: (speaking) => { eventSpeaking = speaking; },
     onActivity: bumpIdle,
     onApiError: (err) => { console.warn('realtime api error', err); recordError(err); },
+    onDebug: recordTrail,
     onError: (err) => {
       console.error('realtime error', err);
       recordError(err);
@@ -174,6 +175,14 @@ function teardown() {
   stopCamera();
   // 对话过一次后麦克风权限大概率已授予，给语音唤醒一次重试机会
   if (wakeWordCtl) wakeWordCtl.reset();
+}
+
+// 事件流水（最近 14 条），供家长面板"记录"页排查时序问题
+function recordTrail(msg) {
+  if (!cfg.trail) cfg.trail = [];
+  cfg.trail.push(`${new Date().toLocaleTimeString('zh-CN')} ${msg}`);
+  if (cfg.trail.length > 14) cfg.trail = cfg.trail.slice(-14);
+  saveCfg();
 }
 
 // 记录最近一次连接错误，供家长面板"记录"页排查
@@ -256,7 +265,9 @@ async function doToolCall(name, args) {
     try {
       statusText.textContent = '艾莎在看… 👀';
       statusHoldUntil = performance.now() + 4000;   // 提示保持 4 秒，不被状态刷新覆盖
+      recordTrail('开始拍照');
       const dataUrl = await captureCameraFrame();
+      recordTrail('拍照完成');
       if (session && session.sendImage) session.sendImage(dataUrl);
       return { ok: true, note: '照片已放进对话，请根据看到的内容回应 Kiwi' };
     } catch (e) {
@@ -652,7 +663,10 @@ function renderLog() {
   const toolHtml = cfg.lastTool
     ? `<div class="log-day">🔧 最近一次工具调用（${cfg.lastTool.time}）：${cfg.lastTool.name}<br>${String(cfg.lastTool.info).replace(/</g, '&lt;')}</div>`
     : '';
-  $('#log-view').innerHTML = wakeHtml + toolHtml + errHtml + (days.length
+  const trailHtml = (cfg.trail && cfg.trail.length)
+    ? `<div class="log-day">📜 事件流水：<br>${cfg.trail.map(t => String(t).replace(/</g, '&lt;')).join('<br>')}</div>`
+    : '';
+  $('#log-view').innerHTML = wakeHtml + toolHtml + errHtml + trailHtml + (days.length
     ? days.map(d => {
         const l = cfg.log[d];
         return `<div class="log-day">${d} — 读书 ${l.books}/${cfg.booksGoal} 本 · 对话 ${l.minutes} 分钟</div>`;

@@ -11,6 +11,7 @@ class ElsaRealtime {
     this.onActivity = opts.onActivity || (() => {});   // 任一方有语音活动时触发（用于闲置计时）
     this.onError = opts.onError || console.error;              // 连接级致命错误
     this.onApiError = opts.onApiError || console.error;        // 会话内非致命错误（记录但不挂断）
+    this.onDebug = opts.onDebug || (() => {});                 // 事件流水（诊断用）
     this.audioEl = opts.audioEl;
     this.pc = null;
     this.dc = null;
@@ -97,17 +98,24 @@ class ElsaRealtime {
 
   // 请求一次回应；若已有回复在进行则排队，等它结束再发
   // （硬发会被服务器以 "already has an active response" 拒绝）
+  // resp 为 null 时发不带 response 字段的裸 response.create（与 v14 工具回应格式一致）
   _createResponse(resp) {
-    if (this._responseActive) { this._pendingResponses.push(resp); return; }
+    if (this._responseActive) {
+      this._pendingResponses.push(resp);
+      this.onDebug('排队回应请求（当前有回复进行中）');
+      return;
+    }
     this._lastResp = resp;
-    this._send({ type: 'response.create', response: resp });
+    this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
+    this.onDebug('直发回应请求' + (resp && resp.instructions ? '（带指令）' : ''));
   }
 
   _flushPending() {
     if (!this._responseActive && this._pendingResponses.length) {
       const resp = this._pendingResponses.shift();
       this._lastResp = resp;
-      this._send({ type: 'response.create', response: resp });
+      this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
+      this.onDebug(`重发排队的回应请求（剩余${this._pendingResponses.length}）`);
     }
   }
 
@@ -126,6 +134,7 @@ class ElsaRealtime {
         content: [{ type: 'input_image', image_url: dataUrl }]
       }
     });
+    this.onDebug(`照片已发进对话（${Math.round(dataUrl.length / 1024)}KB）`);
   }
 
   _handleEvent(ev) {
@@ -135,7 +144,8 @@ class ElsaRealtime {
         // 撞上正在进行的回复：把刚才的请求重新排队，等 response.done 后自动重发
         if (/active response/i.test(msg)) {
           this._responseActive = true;
-          if (this._lastResp) { this._pendingResponses.unshift(this._lastResp); this._lastResp = null; }
+          if (this._lastResp !== undefined) { this._pendingResponses.unshift(this._lastResp); this._lastResp = undefined; }
+          this.onDebug('回应请求撞车，已重新排队');
           return;
         }
         // 仅当明确是 session.update 格式问题时才降级重发一次
@@ -153,7 +163,7 @@ class ElsaRealtime {
         break;
       case 'output_audio_buffer.started':
       case 'response.created':
-        if (ev.type === 'response.created') this._responseActive = true;
+        if (ev.type === 'response.created') { this._responseActive = true; this.onDebug('回复开始'); }
         this.onSpeakingChange(true);
         this.onActivity();
         break;
@@ -163,7 +173,9 @@ class ElsaRealtime {
         this.onActivity();
         if (ev.type === 'response.done') {
           this._responseActive = false;
-          this._handleToolCalls(ev).then(() => this._flushPending());
+          this.onDebug(`回复结束（${(ev.response && ev.response.status) || '?'}）`);
+          // finally：工具处理无论成败都要 flush，避免队列卡死
+          this._handleToolCalls(ev).catch(e => this.onApiError(String(e))).then(() => this._flushPending());
         }
         break;
     }
