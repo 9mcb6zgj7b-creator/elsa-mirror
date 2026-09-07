@@ -111,6 +111,12 @@ class ElsaRealtime {
     this.onDebug(on ? '恢复听麦克风' : '暂停听麦克风');
   }
 
+  // 丢弃服务器上尚未处理的输入语音（"你看"的尾音），避免它触发一轮抢跑的回应
+  clearInputAudio() {
+    this._send({ type: 'input_audio_buffer.clear' });
+    this.onDebug('清空未处理的输入语音');
+  }
+
   // 直发回应请求（v14 行为：不排队、不重发；撞上进行中的回复就让服务器拒绝，只记日志）
   _createResponse(resp) {
     this._send(resp ? { type: 'response.create', response: resp } : { type: 'response.create' });
@@ -423,6 +429,8 @@ class GeminiRealtime {
     if (this.mic) this.mic.getAudioTracks().forEach(t => { t.enabled = !!on; });
     this.onDebug(on ? '恢复听麦克风' : '暂停听麦克风');
   }
+
+  clearInputAudio() { /* Gemini 无对应接口，静音本身已足够 */ }
 
   // 让艾莎按指令主动说话（打招呼、提醒、道别）
   speak(instructionText) {

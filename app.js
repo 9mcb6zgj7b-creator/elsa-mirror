@@ -1,6 +1,6 @@
 // 艾莎魔镜 —— 主逻辑
 (() => {
-const APP_VERSION = 'v21';   // 与 index.html 里的 ?v=N 同步升级
+const APP_VERSION = 'v22';   // 与 index.html 里的 ?v=N 同步升级
 const STORE_KEY = 'elsa-mirror-v1';
 const IDLE_TIMEOUT_MS = 90 * 1000;   // 90 秒无人说话则休眠
 
@@ -82,11 +82,33 @@ let wakeWordCtl = null;   // 语音唤醒控制器（wakeWord 初始化后赋值
 // 0=未启用 1=已静音等艾莎开口 2=艾莎正在讲看到的内容
 let lookMute = 0;
 let lookMuteTimer = null;
+let lookNudgeTimers = [];
 
 function endLookMute() {
   lookMute = 0;
   clearTimeout(lookMuteTimer);
+  lookNudgeTimers.forEach(clearTimeout);
+  lookNudgeTimers = [];
   if (session && session.setMicEnabled) session.setMicEnabled(true);
+}
+
+// "看"的看门狗：4/9 秒还没开口就自动催（相当于替 Kiwi 追问"怎么样"），15 秒放弃并明确提示
+function scheduleLookNudges() {
+  lookNudgeTimers.forEach(clearTimeout);
+  lookNudgeTimers = [4000, 9000].map(ms => setTimeout(() => {
+    if (lookMute === 1 && session) {
+      recordTrail(`看的回应 ${ms / 1000} 秒未开始，自动催一次`);
+      session.speak('请立刻根据刚才收到的照片回应 Kiwi：是书页就声情并茂地读出来，是别的就说说你看到了什么。');
+    }
+  }, ms));
+  lookNudgeTimers.push(setTimeout(() => {
+    if (lookMute === 1) {
+      recordTrail('看的流程 15 秒超时，放弃并恢复听');
+      endLookMute();
+      statusText.textContent = '艾莎没看清，再说一次"你看"试试 ❄️';
+      statusHoldUntil = performance.now() + 5000;
+    }
+  }, 15000));
 }
 
 // 默认只提示拍雪花；语音监听真正启动时（onstart）才把提示升级为"喊 hello 艾莎"
@@ -195,6 +217,8 @@ function teardown() {
   audioLastLoudMs = 0;
   lookMute = 0;
   clearTimeout(lookMuteTimer);
+  lookNudgeTimers.forEach(clearTimeout);
+  lookNudgeTimers = [];
   stopCamera();
   // 对话过一次后麦克风权限大概率已授予，给语音唤醒一次重试机会
   if (wakeWordCtl) wakeWordCtl.reset();
@@ -288,12 +312,14 @@ async function doToolCall(name, args) {
     try {
       statusText.textContent = '艾莎在看… 👀';
       statusHoldUntil = performance.now() + 4000;   // 提示保持 4 秒，不被状态刷新覆盖
-      // "看"优先于一切：拍照到讲完期间静音麦克风，保证流程不被打断
+      // "看"优先于一切：拍照到讲完期间静音麦克风，并丢弃"你看"的尾音防止抢跑回应
       if (session && session.setMicEnabled) {
         session.setMicEnabled(false);
+        if (session.clearInputAudio) session.clearInputAudio();
         lookMute = 1;
         clearTimeout(lookMuteTimer);
-        lookMuteTimer = setTimeout(endLookMute, 45000);   // 兜底：最长 45 秒后强制恢复听
+        lookMuteTimer = setTimeout(endLookMute, 30000);   // 最终兜底
+        scheduleLookNudges();
       }
       recordTrail('开始拍照');
       const dataUrl = await captureCameraFrame();
